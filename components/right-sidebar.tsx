@@ -28,11 +28,11 @@ export const RightSidebar = () => {
 
             {
               history.map((imgState, idx) => {
-                // generate unique id for each image in the
                 const isActive = historyIndex === idx;
                 return (
-                  <div className="relative group" key={new Date().toISOString()}>
+                  <div className="relative group" key={idx}>
                     <button
+                      type="button"
                       onClick={() => { setHistoryIndex(idx)}}
                       className={cn(
                         "relative w-full aspect-square rounded-xl overflow-hidden border-2 transition-all duration-200",

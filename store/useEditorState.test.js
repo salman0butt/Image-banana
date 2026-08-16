@@ -40,3 +40,14 @@ test("connects the editor store to Redux DevTools", async () => {
   });
   expect(useEditorStore.getState().history).toEqual(["data:image/png;base64,test"]);
 });
+
+test("does not update the store when selecting the active history item", async () => {
+  const { useEditorStore } = await import("./useEditorState");
+
+  useEditorStore.getState().setImage("data:image/png;base64,active");
+  const stateBeforeSelection = useEditorStore.getState();
+
+  useEditorStore.getState().setHistoryIndex(0);
+
+  expect(useEditorStore.getState()).toBe(stateBeforeSelection);
+});

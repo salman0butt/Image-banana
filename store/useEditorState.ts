@@ -24,7 +24,15 @@ export const useEditorStore = create<EditorState>()(
         set({ image: imageData, history: [imageData] }, false, "setImage"),
       setPrompt: (prompt) => set({ prompt }),
       setHistory: ((history) => set({history})),
-      setHistoryIndex: (index: number) => set({historyIndex: index}),
+      setHistoryIndex: (index: number) => {
+        const state = get();
+
+        if (index === state.historyIndex) {
+          return;
+        }
+
+        set({historyIndex: index, image: state.history[index]})
+      },
       generateEdit: async ({ webSearch = false } = {}) => {
         const { image, prompt, history } = get();
 

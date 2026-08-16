@@ -23,6 +23,9 @@ export const metadata: Metadata = {
     shortcut: "/favicon-16x16.png",
     apple: "/apple-touch-icon.png",
   },
+  other: {
+    "darkreader-lock": "true",
+  },
 };
 
 export default function RootLayout({

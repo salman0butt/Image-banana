@@ -56,7 +56,7 @@ export const useEditorStore = create<EditorState>()(
 
         const clonedHistory = [...history, data.imageBase64];
 
-        set({ image: data.imageBase64, history: clonedHistory }, false, "setGeneratedImage");
+        set({ image: data.imageBase64, history: clonedHistory, historyIndex: history.length }, false, "setGeneratedImage");
       },
     }),
     { name: "EditorStore" },

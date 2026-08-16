@@ -38,4 +38,5 @@ test("connects the editor store to Redux DevTools", async () => {
     action: { type: "setImage" },
     state: expect.objectContaining({ image: "data:image/png;base64,test" }),
   });
+  expect(useEditorStore.getState().history).toEqual(["data:image/png;base64,test"]);
 });

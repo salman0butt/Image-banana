@@ -20,6 +20,7 @@ export function Navbar() {
             <Image
               src="/logo.png"
               alt="Image's Banana Logo"
+              suppressHydrationWarning
               width={44}
               height={44}
               className="object-cover p-1"

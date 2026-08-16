@@ -4,6 +4,10 @@ import { devtools } from "zustand/middleware";
 type EditorState = {
   image: string | null;
   prompt: string;
+  history: string[];
+  historyIndex: number;
+  setHistoryIndex: (index: number) => void
+  setHistory: (history: string[]) => void;
   setImage: (imageData: string) => void;
   setPrompt: (prompt: string) => void;
   generateEdit: (options?: { webSearch?: boolean }) => Promise<void>;
@@ -14,10 +18,16 @@ export const useEditorStore = create<EditorState>()(
     (set, get) => ({
       image: null,
       prompt: "",
-      setImage: (imageData) => set({ image: imageData }, false, "setImage"),
+      history: [],
+      historyIndex: 0,
+      setImage: (imageData: string) =>
+        set({ image: imageData, history: [imageData] }, false, "setImage"),
       setPrompt: (prompt) => set({ prompt }),
+      setHistory: ((history) => set({history})),
+      setHistoryIndex: (index: number) => set({historyIndex: index}),
       generateEdit: async ({ webSearch = false } = {}) => {
-        const { image, prompt } = get();
+        const { image, prompt, history } = get();
+
         const response = await fetch("/api/edit-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -27,11 +37,7 @@ export const useEditorStore = create<EditorState>()(
             webSearch,
           }),
         });
-        console.log({
-            imageBase64: image,
-            prompt,
-            webSearch,
-          })
+
         const data = await response.json();
 
         if (!response.ok) {
@@ -48,7 +54,9 @@ export const useEditorStore = create<EditorState>()(
           throw new Error("The API returned no image.");
         }
 
-        set({ image: data.imageBase64 }, false, "setGeneratedImage");
+        const clonedHistory = [...history, data.imageBase64];
+
+        set({ image: data.imageBase64, history: clonedHistory }, false, "setGeneratedImage");
       },
     }),
     { name: "EditorStore" },

@@ -7,19 +7,6 @@ import {
   Attachments,
 } from "@/components/ai-elements/attachments";
 import {
-  ModelSelector,
-  ModelSelectorContent,
-  ModelSelectorEmpty,
-  ModelSelectorGroup,
-  ModelSelectorInput,
-  ModelSelectorItem,
-  ModelSelectorList,
-  ModelSelectorLogo,
-  ModelSelectorLogoGroup,
-  ModelSelectorName,
-  ModelSelectorTrigger,
-} from "@/components/ai-elements/model-selector";
-import {
   PromptInput,
   PromptInputActionAddAttachments,
   PromptInputActionMenu,
@@ -29,56 +16,14 @@ import {
   PromptInputButton,
   PromptInputFooter,
   type PromptInputMessage,
-  PromptInputProvider,
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
   usePromptInputAttachments,
-  usePromptInputController,
 } from "@/components/ai-elements/prompt-input";
-import { Button } from "@/components/ui/button";
-import { ButtonGroup } from "@/components/ui/button-group";
 import { useEditorStore } from "@/store/useEditorState";
-import { CheckIcon, GlobeIcon } from "lucide-react";
+import { GlobeIcon } from "lucide-react";
 import { useState } from "react";
-
-const models = [
-  {
-    id: "gpt-4o",
-    name: "GPT-4o",
-    chef: "OpenAI",
-    chefSlug: "openai",
-    providers: ["openai", "azure"],
-  },
-  {
-    id: "gpt-4o-mini",
-    name: "GPT-4o Mini",
-    chef: "OpenAI",
-    chefSlug: "openai",
-    providers: ["openai", "azure"],
-  },
-  {
-    id: "claude-opus-4-20250514",
-    name: "Claude 4 Opus",
-    chef: "Anthropic",
-    chefSlug: "anthropic",
-    providers: ["anthropic", "azure", "google", "amazon-bedrock"],
-  },
-  {
-    id: "claude-sonnet-4-20250514",
-    name: "Claude 4 Sonnet",
-    chef: "Anthropic",
-    chefSlug: "anthropic",
-    providers: ["anthropic", "azure", "google", "amazon-bedrock"],
-  },
-  {
-    id: "gemini-2.0-flash-exp",
-    name: "Gemini 2.0 Flash",
-    chef: "Google",
-    chefSlug: "google",
-    providers: ["google"],
-  },
-];
 
 const PromptInputAttachmentsDisplay = () => {
   const attachments = usePromptInputAttachments();
@@ -104,14 +49,11 @@ const PromptInputAttachmentsDisplay = () => {
 };
 
 export const AIPromptInput = () => {
-  const {setPrompt, generateEdit} = useEditorStore();
-  const [model, setModel] = useState<string>(models[0].id);
-  const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
-  const [status, setStatus] = useState<
-    "submitted" | "streaming" | "ready" | "error"
-  >("ready");
-
-  const selectedModelData = models.find((m) => m.id === model);
+  const { setPrompt, generateEdit } = useEditorStore();
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [status, setStatus] = useState<"submitted" | "ready" | "error">(
+    "ready",
+  );
 
   const handleSubmit = async (message: PromptInputMessage) => {
     const hasText = Boolean(message.text);
@@ -126,95 +68,44 @@ export const AIPromptInput = () => {
     setPrompt(message.text);
 
     try {
-      await generateEdit();
+      await generateEdit({ webSearch: webSearchEnabled });
       setStatus("ready");
     } catch (error) {
       console.error("Image edit failed:", error);
       setStatus("error");
-      throw error;
     }
   };
 
   return (
     <div className="size-full">
-        <PromptInput globalDrop multiple onSubmit={handleSubmit}>
-          <PromptInputAttachmentsDisplay />
-          <PromptInputBody>
-            <PromptInputTextarea />
-          </PromptInputBody>
-          <PromptInputFooter>
-            <PromptInputTools>
-              <PromptInputActionMenu>
-                <PromptInputActionMenuTrigger />
-                <PromptInputActionMenuContent>
-                  <PromptInputActionAddAttachments />
-                </PromptInputActionMenuContent>
-              </PromptInputActionMenu>
-              <PromptInputButton>
-                <GlobeIcon size={16} />
-                <span>Search</span>
-              </PromptInputButton>
-              <ModelSelector
-                onOpenChange={setModelSelectorOpen}
-                open={modelSelectorOpen}
-              >
-                <ModelSelectorTrigger asChild>
-                  <PromptInputButton>
-                    {selectedModelData?.chefSlug && (
-                      <ModelSelectorLogo
-                        provider={selectedModelData.chefSlug}
-                      />
-                    )}
-                    {selectedModelData?.name && (
-                      <ModelSelectorName>
-                        {selectedModelData.name}
-                      </ModelSelectorName>
-                    )}
-                  </PromptInputButton>
-                </ModelSelectorTrigger>
-                <ModelSelectorContent>
-                  <ModelSelectorInput placeholder="Search models..." />
-                  <ModelSelectorList>
-                    <ModelSelectorEmpty>No models found.</ModelSelectorEmpty>
-                    {["OpenAI", "Anthropic", "Google"].map((chef) => (
-                      <ModelSelectorGroup heading={chef} key={chef}>
-                        {models
-                          .filter((m) => m.chef === chef)
-                          .map((m) => (
-                            <ModelSelectorItem
-                              key={m.id}
-                              onSelect={() => {
-                                setModel(m.id);
-                                setModelSelectorOpen(false);
-                              }}
-                              value={m.id}
-                            >
-                              <ModelSelectorLogo provider={m.chefSlug} />
-                              <ModelSelectorName>{m.name}</ModelSelectorName>
-                              <ModelSelectorLogoGroup>
-                                {m.providers.map((provider) => (
-                                  <ModelSelectorLogo
-                                    key={provider}
-                                    provider={provider}
-                                  />
-                                ))}
-                              </ModelSelectorLogoGroup>
-                              {model === m.id ? (
-                                <CheckIcon className="ml-auto size-4" />
-                              ) : (
-                                <div className="ml-auto size-4" />
-                              )}
-                            </ModelSelectorItem>
-                          ))}
-                      </ModelSelectorGroup>
-                    ))}
-                  </ModelSelectorList>
-                </ModelSelectorContent>
-              </ModelSelector>
-            </PromptInputTools>
-            <PromptInputSubmit status={status} />
-          </PromptInputFooter>
-        </PromptInput>
+      <PromptInput globalDrop multiple onSubmit={handleSubmit}>
+        <PromptInputAttachmentsDisplay />
+        <PromptInputBody>
+          <PromptInputTextarea />
+        </PromptInputBody>
+        <PromptInputFooter>
+          <PromptInputTools>
+            <PromptInputActionMenu>
+              <PromptInputActionMenuTrigger />
+              <PromptInputActionMenuContent>
+                <PromptInputActionAddAttachments />
+              </PromptInputActionMenuContent>
+            </PromptInputActionMenu>
+            <PromptInputButton
+              aria-pressed={webSearchEnabled}
+              className={
+                webSearchEnabled ? "bg-yellow-500/20 text-yellow-400" : undefined
+              }
+              onClick={() => setWebSearchEnabled((enabled) => !enabled)}
+              title={webSearchEnabled ? "Web search enabled" : "Enable web search"}
+            >
+              <GlobeIcon size={16} />
+              <span>Search</span>
+            </PromptInputButton>
+          </PromptInputTools>
+          <PromptInputSubmit status={status} />
+        </PromptInputFooter>
+      </PromptInput>
     </div>
   );
 };

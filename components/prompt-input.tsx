@@ -38,6 +38,7 @@ import {
 } from "@/components/ai-elements/prompt-input";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
+import { useEditorStore } from "@/store/useEditorState";
 import { CheckIcon, GlobeIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -79,9 +80,6 @@ const models = [
   },
 ];
 
-const SUBMITTING_TIMEOUT = 200;
-const STREAMING_TIMEOUT = 2000;
-
 const PromptInputAttachmentsDisplay = () => {
   const attachments = usePromptInputAttachments();
 
@@ -106,6 +104,7 @@ const PromptInputAttachmentsDisplay = () => {
 };
 
 export const AIPromptInput = () => {
+  const {setPrompt, generateEdit} = useEditorStore();
   const [model, setModel] = useState<string>(models[0].id);
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const [status, setStatus] = useState<
@@ -114,7 +113,7 @@ export const AIPromptInput = () => {
 
   const selectedModelData = models.find((m) => m.id === model);
 
-  const handleSubmit = (message: PromptInputMessage) => {
+  const handleSubmit = async (message: PromptInputMessage) => {
     const hasText = Boolean(message.text);
     const hasAttachments = Boolean(message.files?.length);
 
@@ -124,16 +123,16 @@ export const AIPromptInput = () => {
 
     setStatus("submitted");
 
-    // eslint-disable-next-line no-console
-    console.log("Submitting message:", message);
+    setPrompt(message.text);
 
-    setTimeout(() => {
-      setStatus("streaming");
-    }, SUBMITTING_TIMEOUT);
-
-    setTimeout(() => {
+    try {
+      await generateEdit();
       setStatus("ready");
-    }, STREAMING_TIMEOUT);
+    } catch (error) {
+      console.error("Image edit failed:", error);
+      setStatus("error");
+      throw error;
+    }
   };
 
   return (
@@ -219,4 +218,3 @@ export const AIPromptInput = () => {
     </div>
   );
 };
-

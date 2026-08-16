@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
-import { Download, History, Redo, Undo, Upload, X } from "lucide-react";
+import { Download, History, Redo, Undo, Upload } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -19,14 +19,15 @@ export function Navbar() {
           <div className="relative h-11 w-11 overflow-hidden rounded-xl flex items-center justify-center">
             <Image
               src="/logo.png"
-              alt="Coder's Banana Logo"
-              fill
+              alt="Image's Banana Logo"
+              width={44}
+              height={44}
               className="object-cover p-1"
               priority
             />
           </div>
           <span className="text-zinc-100 hidden md:block tracking-tight">
-            {`Coder's`}
+            {`Image's`}
             <span className="text-yellow-500">Banana</span>
           </span>
         </Link>

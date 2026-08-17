@@ -6,8 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Download, History, Redo, Undo, Upload } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { useEditorStore } from "@/store/useEditorState";
 
 export function Navbar() {
+
+  const {undo, redo, historyIndex} = useEditorStore();
+
   return (
     <header className="h-16 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between px-4 shrink-0 z-50">
       {/* Left: Branding */}
@@ -39,6 +43,8 @@ export function Navbar() {
         {/* 1. Undo / Redo Group */}
         <div className="flex items-center bg-zinc-900 rounded-md p-1 border border-zinc-800">
           <Button
+            onClick={undo}
+            disabled={historyIndex <= 0}
             variant="ghost"
             size="icon"
             className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
@@ -49,6 +55,8 @@ export function Navbar() {
           <div className="h-4 w-px bg-zinc-700 mx-1"></div>
 
           <Button
+            disabled={historyIndex > history.length - 1}
+            onClick={redo}
             variant="ghost"
             size="icon"
             className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"

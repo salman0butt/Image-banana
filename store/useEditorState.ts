@@ -8,6 +8,8 @@ type EditorState = {
   historyIndex: number;
   setHistoryIndex: (index: number) => void
   setHistory: (history: string[]) => void;
+  undo: () => void,
+  redo: () => void,
   setImage: (imageData: string) => void;
   setPrompt: (prompt: string) => void;
   generateEdit: (options?: { webSearch?: boolean }) => Promise<void>;
@@ -23,7 +25,7 @@ export const useEditorStore = create<EditorState>()(
       setImage: (imageData: string) =>
         set({ image: imageData, history: [imageData] }, false, "setImage"),
       setPrompt: (prompt) => set({ prompt }),
-      setHistory: ((history) => set({history})),
+      setHistory: ((history) => set({ history })),
       setHistoryIndex: (index: number) => {
         const state = get();
 
@@ -31,7 +33,31 @@ export const useEditorStore = create<EditorState>()(
           return;
         }
 
-        set({historyIndex: index, image: state.history[index]})
+        set({ historyIndex: index, image: state.history[index] })
+      },
+      undo: () => {
+        const state = get();
+
+        if (state.historyIndex > 0) {
+          const newIndex = state.historyIndex - 1;
+          set({
+            image: state.history[newIndex],
+            historyIndex: newIndex
+          });
+        }
+
+      },
+      redo: () => {
+        const state = get();
+
+        if (state.historyIndex < state.history.length - 1) {
+          const newIndex = state.historyIndex + 1;
+          set({
+            image: state.history[newIndex],
+            historyIndex: newIndex
+          })
+        }
+
       },
       generateEdit: async ({ webSearch = false } = {}) => {
         const { image, prompt, history } = get();

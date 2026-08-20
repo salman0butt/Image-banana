@@ -13,7 +13,7 @@ import { useEditorStore } from "@/store/useEditorState";
 export default function Home() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const {image, setImage, showHistory} = useEditorStore()
+  const {image, setImage, showHistory, isLoading} = useEditorStore()
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     const reader = new FileReader();
@@ -91,7 +91,7 @@ export default function Home() {
               </div>
 
               {/* render when image in generating */}
-              {/* <ImageGenerationLoading /> */}
+             {isLoading && <ImageGenerationLoading />} 
             </div>
 
             {/* PROMPT INPUT AREA */}

@@ -6,14 +6,16 @@ type EditorState = {
   prompt: string;
   history: string[];
   historyIndex: number;
-  showHistory: boolean,
-  setHistoryIndex: (index: number) => void
+  showHistory: boolean;
+  isLoading: boolean;
+  setHistoryIndex: (index: number) => void;
   setHistory: (history: string[]) => void;
-  undo: () => void,
-  redo: () => void,
+  undo: () => void;
+  redo: () => void;
   setImage: (imageData: string) => void;
   setPrompt: (prompt: string) => void;
-  toggleHistory: () => void
+  toggleHistory: () => void;
+  setLoading: (val: boolean) => void;
   generateEdit: (options?: { webSearch?: boolean }) => Promise<void>;
 };
 
@@ -25,6 +27,7 @@ export const useEditorStore = create<EditorState>()(
       history: [],
       historyIndex: 0,
       showHistory: false,
+      isLoading: false,
       setImage: (imageData: string) =>
         set({ image: imageData, history: [imageData] }, false, "setImage"),
       setPrompt: (prompt) => set({ prompt }),
@@ -71,38 +74,59 @@ export const useEditorStore = create<EditorState>()(
         }
 
       },
+      setLoading: (val: boolean) => {
+        set({
+          isLoading: val
+        })
+      },
       generateEdit: async ({ webSearch = false } = {}) => {
         const { image, prompt, history } = get();
+        set({ isLoading: true });
 
-        const response = await fetch("/api/edit-image", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            imageBase64: image,
-            prompt,
-            webSearch,
-          }),
-        });
+        try {
+          const response = await fetch("/api/edit-image", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              imageBase64: image,
+              prompt,
+              webSearch,
+            }),
+          });
 
-        const data = await response.json();
+          const data = await response.json();
 
-        if (!response.ok) {
-          const message =
-            typeof data.details === "string"
-              ? data.details
-              : typeof data.error === "string"
-                ? data.error
-                : "OpenAI image editing failed.";
-          throw new Error(message);
+          if (!response.ok) {
+            const message =
+              typeof data.details === "string"
+                ? data.details
+                : typeof data.error === "string"
+                  ? data.error
+                  : "OpenAI image editing failed.";
+            throw new Error(message);
+          }
+
+          if (typeof data.imageBase64 !== "string" || !data.imageBase64) {
+            throw new Error("The API returned no image.");
+          }
+
+          const clonedHistory = [...history, data.imageBase64];
+          set(
+            {
+              image: data.imageBase64,
+              history: clonedHistory,
+              historyIndex: history.length,
+            },
+            false,
+            "setGeneratedImage",
+          );
+        } catch (error) {
+          throw error instanceof Error
+            ? error
+            : new Error("Image editing failed.");
+        } finally {
+          set({ isLoading: false });
         }
-
-        if (typeof data.imageBase64 !== "string" || !data.imageBase64) {
-          throw new Error("The API returned no image.");
-        }
-
-        const clonedHistory = [...history, data.imageBase64];
-
-        set({ image: data.imageBase64, history: clonedHistory, historyIndex: history.length }, false, "setGeneratedImage");
       },
     }),
     { name: "EditorStore" },

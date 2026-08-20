@@ -1,3 +1,4 @@
+import { FileUIPart } from "ai";
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 
@@ -8,6 +9,8 @@ type EditorState = {
   historyIndex: number;
   showHistory: boolean;
   isLoading: boolean;
+  userFiles: FileUIPart[];
+  setUserFiles: (files: FileUIPart[]) => void;
   setHistoryIndex: (index: number) => void;
   setHistory: (history: string[]) => void;
   undo: () => void;
@@ -28,6 +31,12 @@ export const useEditorStore = create<EditorState>()(
       historyIndex: 0,
       showHistory: false,
       isLoading: false,
+      userFiles: [],
+      setUserFiles: (files: FileUIPart[]) => {
+        set({
+          userFiles: files
+        })
+      },
       setImage: (imageData: string) =>
         set({ image: imageData, history: [imageData] }, false, "setImage"),
       setPrompt: (prompt) => set({ prompt }),
@@ -80,7 +89,7 @@ export const useEditorStore = create<EditorState>()(
         })
       },
       generateEdit: async ({ webSearch = false } = {}) => {
-        const { image, prompt, history } = get();
+        const { image, prompt, history, userFiles } = get();
         set({ isLoading: true });
 
         try {
@@ -91,6 +100,7 @@ export const useEditorStore = create<EditorState>()(
               imageBase64: image,
               prompt,
               webSearch,
+              userFiles
             }),
           });
 

@@ -49,7 +49,7 @@ const PromptInputAttachmentsDisplay = () => {
 };
 
 export const AIPromptInput = () => {
-  const { setPrompt, generateEdit } = useEditorStore();
+  const { setPrompt, generateEdit, setUserFiles } = useEditorStore();
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [status, setStatus] = useState<"submitted" | "ready" | "error">(
     "ready",
@@ -66,6 +66,7 @@ export const AIPromptInput = () => {
     setStatus("submitted");
 
     setPrompt(message.text);
+    setUserFiles(message.files)
 
     try {
       await generateEdit({ webSearch: webSearchEnabled });

@@ -145,7 +145,7 @@ export const useEditorStore = create<EditorState>()(
         }
       },
       applyExpansion: async (aspectRatio: string) => {
-        const { image, history } = get();
+        const { image, history, prompt } = get();
         set({ isLoading: true });
 
         if(!image) return;

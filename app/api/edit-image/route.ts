@@ -5,6 +5,7 @@ import {
   buildReferenceContent,
   parseReferenceFiles,
 } from "@/lib/openai-files";
+import { normalizeAspectRatio, resolveImageSize } from "@/lib/image-size";
 import { getGeneratedImage, mapOpenAIError } from "@/lib/openai-image";
 
 export const runtime = "nodejs";
@@ -26,9 +27,12 @@ type EditImageRequest = {
   prompt: string;
   webSearch: boolean;
   userFiles: FileUIPart[];
+  aspectRatio: string;
 };
 
-async function readEditImageRequest(request: Request): Promise<EditImageRequest> {
+export async function readEditImageRequest(
+  request: Request,
+): Promise<EditImageRequest> {
   let body: unknown;
 
   try {
@@ -53,12 +57,14 @@ async function readEditImageRequest(request: Request): Promise<EditImageRequest>
   }
 
   const userFiles = parseReferenceFiles(payload.userFiles);
+  const aspectRatio = normalizeAspectRatio(payload.aspectRatio);
 
   return {
     imageDataUrl: toImageDataUrl(payload.imageBase64),
     prompt,
     webSearch: payload.webSearch === true,
     userFiles,
+    aspectRatio,
   };
 }
 
@@ -88,6 +94,30 @@ export async function POST(request: Request) {
 
   const client = new OpenAI({ apiKey });
   const model = process.env.OPENAI_MODEL ?? "gpt-5.6";
+  const imageModel = process.env.OPENAI_IMAGE_MODEL?.trim() || "gpt-image-2";
+  const configuredSize = envOption(
+    process.env.OPENAI_IMAGE_SIZE,
+    IMAGE_SIZES,
+    "1024x1024",
+  );
+  let imageSize: string;
+
+  try {
+    imageSize = resolveImageSize(
+      input.aspectRatio,
+      imageModel,
+      configuredSize,
+    );
+  } catch (error) {
+    return Response.json(
+      {
+        error:
+          error instanceof Error ? error.message : "Invalid image size.",
+      },
+      { status: 400 },
+    );
+  }
+
   let webResearch = "";
 
   try {
@@ -111,8 +141,6 @@ export async function POST(request: Request) {
       (input.userFiles.length
         ? "\n\nUse the additional attached files as reference material for the edit."
         : "");
-    const imageModel = process.env.OPENAI_IMAGE_MODEL?.trim() || "gpt-image-2";
-
     const response = await client.responses.create({
       model,
       input: [
@@ -139,11 +167,7 @@ export async function POST(request: Request) {
             IMAGE_QUALITIES,
             "low",
           ),
-          size: envOption(
-            process.env.OPENAI_IMAGE_SIZE,
-            IMAGE_SIZES,
-            "1024x1024",
-          ),
+          size: imageSize,
           ...(imageModel === "gpt-image-2" || imageModel.startsWith("gpt-image-2-")
             ? {}
             : {

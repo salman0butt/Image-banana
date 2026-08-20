@@ -3,6 +3,11 @@ import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { editImage } from "@/lib/edit-image";
 
+const REMOVE_BACKGROUND_PROMPT =
+  "Remove the background completely. Keep the main subject sharp and unchanged, preserve fine details such as hair and edges, and replace the background with transparency.";
+const REFRESH_IMAGE_PROMPT =
+  "Refresh and enhance the image while preserving the subject, composition, pose, identity, and overall style. Improve lighting, color balance, sharpness, and fine details without changing the image content.";
+
 type EditorState = {
   image: string | null;
   prompt: string;
@@ -22,6 +27,8 @@ type EditorState = {
   setLoading: (val: boolean) => void;
   generateEdit: (options?: { webSearch?: boolean }) => Promise<void>;
   applyFilter: (prompt: string) => Promise<void>;
+  removeBackground: () => Promise<void>;
+  refreshImage: () => Promise<void>;
   applyExpansion: (aspectRatio: string) => void;
 };
 
@@ -144,6 +151,8 @@ export const useEditorStore = create<EditorState>()(
           set({ isLoading: false });
         }
       },
+      removeBackground: () => get().applyFilter(REMOVE_BACKGROUND_PROMPT),
+      refreshImage: () => get().applyFilter(REFRESH_IMAGE_PROMPT),
       applyExpansion: async (aspectRatio: string) => {
         const { image, history, prompt } = get();
         set({ isLoading: true });

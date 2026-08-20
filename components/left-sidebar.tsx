@@ -27,7 +27,14 @@ import { ToolButton } from "@/components//tool-button";
 import { useEditorStore } from "@/store/useEditorState";
 
 export const LeftSidebar = () => {
-  const { applyFilter, applyExpansion } = useEditorStore();
+  const {
+    applyFilter,
+    applyExpansion,
+    removeBackground,
+    refreshImage,
+    image,
+    isLoading,
+  } = useEditorStore();
 
   return (
     <aside className="hidden md:flex w-80 flex-col border-r border-zinc-800 bg-zinc-950/50 z-20 shrink-0 h-full">
@@ -120,18 +127,18 @@ export const LeftSidebar = () => {
                     <GridItem
                       icon={Delete}
                       label={"Remove Background"}
-                      // desc={"clear background"}
-                      onClick={()=>{
-
+                      onClick={() => {
+                        void removeBackground();
                       }}
-                      disabled={true}
+                      disabled={!image || isLoading}
                     />
                     <GridItem
                       icon={Sparkles}
                       label={"AI Refreshment"}
-                      desc={""}
-                      onClick={() => {}}
-                      disabled={true}
+                      onClick={() => {
+                        void refreshImage();
+                      }}
+                      disabled={!image || isLoading}
                     />
                   </div>
                 </AccordionContent>

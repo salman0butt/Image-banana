@@ -1,5 +1,10 @@
 import OpenAI from "openai";
+import type { FileUIPart } from "ai";
 import { toImageDataUrl } from "@/lib/image-data";
+import {
+  buildReferenceContent,
+  parseReferenceFiles,
+} from "@/lib/openai-files";
 import { getGeneratedImage, mapOpenAIError } from "@/lib/openai-image";
 
 export const runtime = "nodejs";
@@ -20,6 +25,7 @@ type EditImageRequest = {
   imageDataUrl: string;
   prompt: string;
   webSearch: boolean;
+  userFiles: FileUIPart[];
 };
 
 async function readEditImageRequest(request: Request): Promise<EditImageRequest> {
@@ -46,10 +52,13 @@ async function readEditImageRequest(request: Request): Promise<EditImageRequest>
     throw new Error("A prompt is required.");
   }
 
+  const userFiles = parseReferenceFiles(payload.userFiles);
+
   return {
     imageDataUrl: toImageDataUrl(payload.imageBase64),
     prompt,
     webSearch: payload.webSearch === true,
+    userFiles,
   };
 }
 
@@ -77,8 +86,6 @@ export async function POST(request: Request) {
     );
   }
 
-
-
   const client = new OpenAI({ apiKey });
   const model = process.env.OPENAI_MODEL ?? "gpt-5.6";
   let webResearch = "";
@@ -96,9 +103,14 @@ export async function POST(request: Request) {
     }
 
     const research = webResearch.trim();
-    const imageInstruction = research
-      ? `Edit the provided image according to this instruction:\n${input.prompt}\n\nUse this current web research as additional context:\n${research}`
-      : `Edit the provided image according to this instruction:\n${input.prompt}`;
+    const imageInstruction =
+      `Edit the provided image according to this instruction:\n${input.prompt}` +
+      (research
+        ? `\n\nUse this current web research as additional context:\n${research}`
+        : "") +
+      (input.userFiles.length
+        ? "\n\nUse the additional attached files as reference material for the edit."
+        : "");
     const imageModel = process.env.OPENAI_IMAGE_MODEL?.trim() || "gpt-image-2";
 
     const response = await client.responses.create({
@@ -113,6 +125,7 @@ export async function POST(request: Request) {
               image_url: input.imageDataUrl,
               detail: "auto",
             },
+            ...buildReferenceContent(input.userFiles),
           ],
         },
       ],

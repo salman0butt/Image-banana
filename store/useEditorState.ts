@@ -1,6 +1,7 @@
 import { FileUIPart } from "ai";
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
+import { editImage } from "@/lib/edit-image";
 
 type EditorState = {
   image: string | null;
@@ -20,6 +21,8 @@ type EditorState = {
   toggleHistory: () => void;
   setLoading: (val: boolean) => void;
   generateEdit: (options?: { webSearch?: boolean }) => Promise<void>;
+  applyFilter: (prompt: string) => Promise<void>;
+  applyExpansion: (aspectRatio: string) => void;
 };
 
 export const useEditorStore = create<EditorState>()(
@@ -93,37 +96,17 @@ export const useEditorStore = create<EditorState>()(
         set({ isLoading: true });
 
         try {
-          const response = await fetch("/api/edit-image", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              imageBase64: image,
-              prompt,
-              webSearch,
-              userFiles
-            }),
+          const imageBase64 = await editImage({
+            imageBase64: image,
+            prompt,
+            webSearch,
+            userFiles,
           });
 
-          const data = await response.json();
-
-          if (!response.ok) {
-            const message =
-              typeof data.details === "string"
-                ? data.details
-                : typeof data.error === "string"
-                  ? data.error
-                  : "OpenAI image editing failed.";
-            throw new Error(message);
-          }
-
-          if (typeof data.imageBase64 !== "string" || !data.imageBase64) {
-            throw new Error("The API returned no image.");
-          }
-
-          const clonedHistory = [...history, data.imageBase64];
+          const clonedHistory = [...history, imageBase64];
           set(
             {
-              image: data.imageBase64,
+              image: imageBase64,
               history: clonedHistory,
               historyIndex: history.length,
             },
@@ -138,6 +121,69 @@ export const useEditorStore = create<EditorState>()(
           set({ isLoading: false });
         }
       },
+      applyFilter: async (prompt: string) => {
+        const { image, history } = get();
+        set({ isLoading: true });
+
+        try {
+          const imageBase64 = await editImage({
+            imageBase64: image,
+            prompt,
+          });
+
+          set({
+            image: imageBase64,
+            history: [...history, imageBase64],
+            historyIndex: history.length,
+          });
+        } catch (error) {
+          throw error instanceof Error
+            ? error
+            : new Error("Image editing failed.");
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+      applyExpansion: async (aspectRatio: string) => {
+        const { image, history } = get();
+        set({ isLoading: true });
+
+        if(!image) return;
+
+        const baseInstructions = `High-fidelity outpainting. Analyze the visual context of the original image and seamlessly extend
+        the scenery into the empty areas. Ensure the person's face and features remain: completely
+        unchanged`;
+
+        const technicalConstraint = `Strictly maintain the continuity of existing lines, horizon, textures, lighting, and
+        perspective. The transition must be invisible. Do not alter the style or content of the original center image`
+
+        const userContext = prompt ? `Addtional contect/subject for extension: ${prompt}` : "";
+
+        const finalPrompt = `
+          ${baseInstructions}
+          ${technicalConstraint}
+          ${userContext}
+        `
+        try {
+          const imageBase64 = await editImage({
+            imageBase64: image,
+            prompt: finalPrompt,
+            aspectRatio
+          });
+
+          set({
+            image: imageBase64,
+            history: [...history, imageBase64],
+            historyIndex: history.length,
+          });
+        } catch (error) {
+          throw error instanceof Error
+            ? error
+            : new Error("Image editing failed.");
+        } finally {
+          set({ isLoading: false });
+        }
+      }
     }),
     { name: "EditorStore" },
   ),

@@ -9,10 +9,18 @@ const REMOVE_BACKGROUND_PROMPT =
 const REFRESH_IMAGE_PROMPT =
   "Refresh and enhance the image while preserving the subject, composition, pose, identity, and overall style. Improve lighting, color balance, sharpness, and fine details without changing the image content.";
 
+type RunEditOptions = {
+  prompt: string;
+  webSearch?: boolean;
+  userFiles?: FileUIPart[];
+  aspectRatio?: string;
+  mask?: Blob | null;
+};
+
 type EditorState = {
   image: string | null;
-  imageFileId: string | null;
-  fileIdsByImage: Record<string, string>;
+  imageRef: string | null;
+  imageRefsByImage: Record<string, string>;
   mask: Blob | null;
   prompt: string;
   history: string[];
@@ -27,16 +35,17 @@ type EditorState = {
   setBrushSize: (size: number) => void;
   setUserFiles: (files: FileUIPart[]) => void;
   setHistoryIndex: (index: number) => void;
-  setHistory: (history: string[]) => void;
+  clearHistoryExceptCurrent: () => void;
   undo: () => void;
   redo: () => void;
-  setImage: (imageData: string, fileId?: string | null) => void;
+  setImage: (imageData: string, imageRef?: string | null) => void;
   clearImage: () => void;
-  attachImageFileId: (imageData: string, fileId: string) => void;
+  attachImageRef: (imageData: string, imageRef: string) => void;
   setPrompt: (prompt: string) => void;
   toggleHistory: () => void;
   setLoading: (val: boolean) => void;
   setUploading: (val: boolean) => void;
+  cancelEdit: () => void;
   generateEdit: (options?: { webSearch?: boolean }) => Promise<void>;
   applyFilter: (prompt: string) => Promise<void>;
   removeBackground: () => Promise<void>;
@@ -45,40 +54,124 @@ type EditorState = {
   setSelectedTool: (tool: ToolType) => void;
 };
 
+function revokeImageUrl(url: string): void {
+  if (
+    url.startsWith("blob:") &&
+    typeof URL !== "undefined" &&
+    typeof URL.revokeObjectURL === "function"
+  ) {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    error instanceof DOMException
+      ? error.name === "AbortError"
+      : error instanceof Error && error.name === "AbortError"
+  );
+}
+
 export const useEditorStore = create<EditorState>()(
   devtools(
     (set, get) => {
-      const commitImage = (image: string, fileId: string) =>
-        set((state) => ({
-          image,
-          imageFileId: fileId,
-          fileIdsByImage: {
-            ...state.fileIdsByImage,
-            [image]: fileId,
-          },
-          mask: null,
-          history: [...state.history, image],
-          historyIndex: state.history.length,
-        }));
+      let activeEditController: AbortController | null = null;
 
       const requireUploadedImage = () => {
-        const { image, imageFileId } = get();
+        const { image, imageRef } = get();
 
         if (!image) {
           throw new Error("Upload an image before editing.");
         }
 
-        if (!imageFileId) {
+        if (!imageRef) {
           throw new Error("The image is still uploading. Try again in a moment.");
         }
 
-        return imageFileId;
+        return imageRef;
+      };
+
+      const commitImage = (image: string, imageRef: string) => {
+        const state = get();
+        const retainedHistory = state.history.slice(0, state.historyIndex + 1);
+        const discardedHistory = state.history.slice(state.historyIndex + 1);
+
+        discardedHistory.forEach(revokeImageUrl);
+
+        const retainedRefs = Object.fromEntries(
+          Object.entries(state.imageRefsByImage).filter(([url]) =>
+            retainedHistory.includes(url),
+          ),
+        );
+
+        set({
+          image,
+          imageRef,
+          imageRefsByImage: {
+            ...retainedRefs,
+            [image]: imageRef,
+          },
+          mask: null,
+          history: [...retainedHistory, image],
+          historyIndex: retainedHistory.length,
+          userFiles: [],
+        });
+      };
+
+      const runEdit = async ({
+        prompt,
+        webSearch = false,
+        userFiles = [],
+        aspectRatio = "",
+        mask = null,
+      }: RunEditOptions) => {
+        const normalizedPrompt = prompt.trim();
+        if (!normalizedPrompt) {
+          throw new Error("Enter an edit instruction before generating.");
+        }
+
+        const imageRef = requireUploadedImage();
+        activeEditController?.abort();
+        const controller = new AbortController();
+        activeEditController = controller;
+        set({ isLoading: true });
+
+        try {
+          const result = await editImage({
+            imageRef,
+            prompt: normalizedPrompt,
+            webSearch,
+            userFiles,
+            aspectRatio,
+            mask,
+            signal: controller.signal,
+          });
+
+          if (activeEditController === controller && !controller.signal.aborted) {
+            commitImage(result.imageUrl, result.imageRef);
+          } else {
+            revokeImageUrl(result.imageUrl);
+          }
+        } catch (error) {
+          if (isAbortError(error)) {
+            throw new Error("Image edit cancelled.");
+          }
+
+          throw error instanceof Error
+            ? error
+            : new Error("Image editing failed.");
+        } finally {
+          if (activeEditController === controller) {
+            activeEditController = null;
+            set({ isLoading: false });
+          }
+        }
       };
 
       return {
         image: null,
-        imageFileId: null,
-        fileIdsByImage: {},
+        imageRef: null,
+        imageRefsByImage: {},
         mask: null,
         prompt: "",
         history: [],
@@ -93,44 +186,59 @@ export const useEditorStore = create<EditorState>()(
         setBrushSize: (brushSize) => set({ brushSize }),
         setSelectedTool: (selectedTool) => set({ selectedTool }),
         setUserFiles: (userFiles) => set({ userFiles }),
-        setImage: (imageData, fileId = null) =>
+        setImage: (imageData, imageRef = null) => {
+          const state = get();
+          state.history
+            .filter((url) => url !== imageData)
+            .forEach(revokeImageUrl);
+
           set(
-            (state) => ({
+            {
               image: imageData,
-              imageFileId: fileId,
-              fileIdsByImage: fileId
-                ? { ...state.fileIdsByImage, [imageData]: fileId }
-                : state.fileIdsByImage,
+              imageRef,
+              imageRefsByImage: imageRef ? { [imageData]: imageRef } : {},
               mask: null,
               history: [imageData],
               historyIndex: 0,
-            }),
+              showHistory: false,
+              userFiles: [],
+            },
             false,
             "setImage",
-          ),
-        clearImage: () =>
+          );
+        },
+        clearImage: () => {
+          get().history.forEach(revokeImageUrl);
           set({
             image: null,
-            imageFileId: null,
-            fileIdsByImage: {},
+            imageRef: null,
+            imageRefsByImage: {},
             mask: null,
             history: [],
             historyIndex: 0,
-          }),
-        attachImageFileId: (imageData, fileId) =>
+            showHistory: false,
+            isUploading: false,
+            userFiles: [],
+          });
+        },
+        attachImageRef: (imageData, imageRef) =>
           set((state) => ({
-            imageFileId: state.image === imageData ? fileId : state.imageFileId,
-            fileIdsByImage: {
-              ...state.fileIdsByImage,
-              [imageData]: fileId,
+            imageRef: state.image === imageData ? imageRef : state.imageRef,
+            imageRefsByImage: {
+              ...state.imageRefsByImage,
+              [imageData]: imageRef,
             },
           })),
         setPrompt: (prompt) => set({ prompt }),
-        setHistory: (history) => set({ history }),
-        setHistoryIndex: (index: number) => {
+        setHistoryIndex: (index) => {
           const state = get();
 
-          if (index === state.historyIndex) {
+          if (
+            !Number.isInteger(index) ||
+            index < 0 ||
+            index >= state.history.length ||
+            index === state.historyIndex
+          ) {
             return;
           }
 
@@ -138,7 +246,26 @@ export const useEditorStore = create<EditorState>()(
           set({
             historyIndex: index,
             image,
-            imageFileId: state.fileIdsByImage[image] ?? null,
+            imageRef: state.imageRefsByImage[image] ?? null,
+            mask: null,
+          });
+        },
+        clearHistoryExceptCurrent: () => {
+          const state = get();
+          const currentImage = state.history[state.historyIndex];
+          if (!currentImage) return;
+
+          state.history
+            .filter((url) => url !== currentImage)
+            .forEach(revokeImageUrl);
+
+          const currentRef = state.imageRefsByImage[currentImage];
+          set({
+            history: [currentImage],
+            historyIndex: 0,
+            image: currentImage,
+            imageRef: currentRef ?? null,
+            imageRefsByImage: currentRef ? { [currentImage]: currentRef } : {},
             mask: null,
           });
         },
@@ -154,78 +281,33 @@ export const useEditorStore = create<EditorState>()(
         },
         toggleHistory: () =>
           set(({ history, showHistory }) =>
-            history.length ? { showHistory: !showHistory } : {}),
+            history.length ? { showHistory: !showHistory } : {},
+          ),
         setLoading: (isLoading) => set({ isLoading }),
         setUploading: (isUploading) => set({ isUploading }),
+        cancelEdit: () => {
+          activeEditController?.abort();
+        },
         generateEdit: async ({ webSearch = false } = {}) => {
-          const imageFileId = requireUploadedImage();
           const { prompt, userFiles, mask } = get();
-          set({ isLoading: true });
-
           const finalPrompt = mask
             ? `${prompt}\nEdit only the transparent mask region. Preserve the opaque region.`
             : prompt;
 
-          try {
-            const result = await editImage({
-              imageFileId,
-              prompt: finalPrompt,
-              webSearch,
-              userFiles,
-              mask,
-            });
-
-            commitImage(result.imageUrl, result.fileId);
-          } catch (error) {
-            throw error instanceof Error
-              ? error
-              : new Error("Image editing failed.");
-          } finally {
-            set({ isLoading: false });
-          }
+          await runEdit({
+            prompt: finalPrompt,
+            webSearch,
+            userFiles,
+            mask,
+          });
         },
-        applyFilter: async (prompt: string) => {
-          const imageFileId = requireUploadedImage();
-          set({ isLoading: true });
-
-          try {
-            const result = await editImage({
-              imageFileId,
-              prompt,
-            });
-
-            commitImage(result.imageUrl, result.fileId);
-          } catch (error) {
-            throw error instanceof Error
-              ? error
-              : new Error("Image editing failed.");
-          } finally {
-            set({ isLoading: false });
-          }
-        },
-        removeBackground: () => get().applyFilter(REMOVE_BACKGROUND_PROMPT),
-        refreshImage: () => get().applyFilter(REFRESH_IMAGE_PROMPT),
-        applyExpansion: async (aspectRatio: string) => {
-          const imageFileId = requireUploadedImage();
+        applyFilter: (prompt) => runEdit({ prompt }),
+        removeBackground: () => runEdit({ prompt: REMOVE_BACKGROUND_PROMPT }),
+        refreshImage: () => runEdit({ prompt: REFRESH_IMAGE_PROMPT }),
+        applyExpansion: (aspectRatio) => {
           const { prompt } = get();
-          set({ isLoading: true });
-
           const finalPrompt = `Seamlessly extend the image for ${aspectRatio}. Preserve existing subjects, faces, composition, lighting, textures, and perspective.${prompt ? ` ${prompt}` : ""}`;
-          try {
-            const result = await editImage({
-              imageFileId,
-              prompt: finalPrompt,
-              aspectRatio,
-            });
-
-            commitImage(result.imageUrl, result.fileId);
-          } catch (error) {
-            throw error instanceof Error
-              ? error
-              : new Error("Image editing failed.");
-          } finally {
-            set({ isLoading: false });
-          }
+          return runEdit({ prompt: finalPrompt, aspectRatio });
         },
       };
     },

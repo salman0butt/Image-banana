@@ -22,10 +22,12 @@ function ImageEditor() {
   useEffect(() => {
     if (!image) return;
 
+    let disposed = false;
     const img = new Image();
-    img.src = image;
 
     img.onload = () => {
+      if (disposed) return;
+
       const canvas = canvasRef.current;
       const overlayCanvas = overlayCanvasRef.current;
       const previewCanvas = previewCanvasRef.current;
@@ -68,6 +70,14 @@ function ImageEditor() {
         maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
       }
     };
+
+    img.src = image;
+
+    return () => {
+      disposed = true;
+      img.onload = null;
+      img.onerror = null;
+    };
   }, [image]);
 
   const getPointerPos = (clientX: number, clientY: number): CanvasPoint => {
@@ -75,6 +85,8 @@ function ImageEditor() {
     if (!canvas) return { x: 0, y: 0 };
 
     const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return { x: 0, y: 0 };
+
     return {
       x: (clientX - rect.left) * (canvas.width / rect.width),
       y: (clientY - rect.top) * (canvas.height / rect.height),
@@ -126,8 +138,17 @@ function ImageEditor() {
   };
 
   const persistMask = () => {
-    maskCanvasRef.current?.toBlob((blob) => {
-      if (blob) setMask(blob);
+    const maskCanvas = maskCanvasRef.current;
+    const imageAtRequest = image;
+    if (!maskCanvas || !imageAtRequest) return;
+
+    maskCanvas.toBlob((blob) => {
+      if (
+        blob &&
+        useEditorStore.getState().image === imageAtRequest
+      ) {
+        setMask(blob);
+      }
     }, "image/png");
   };
 
@@ -260,6 +281,7 @@ function ImageEditor() {
           onPointerMove={drawMove}
           onPointerUp={endDrawing}
           onPointerCancel={cancelDrawing}
+          aria-label="Image edit mask canvas"
           className="col-start-1 row-start-1 max-w-full max-h-full touch-none"
         />
         <canvas

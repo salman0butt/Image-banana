@@ -4,6 +4,8 @@ import { signOut } from "@/app/auth/actions";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 
+export const dynamic = "force-dynamic";
+
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 export default async function AccountPage({

@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { ThemeProvider } from "@/components/theme-provider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,10 +13,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CodersBanana",
-  description: "AI Image Editor",
-  keywords: "codersbanana,codersgyan",
-  creator: "codersgyan",
+  title: "Image's Banana — AI Image Editor",
+  description: "Edit images with AI, masks, filters, background removal, and expansion tools.",
+  keywords: ["AI image editor", "image editing", "generative AI"],
+  creator: "Image's Banana",
   icons: {
     icon: "/favicon.ico",
     shortcut: "/favicon-16x16.png",

@@ -2,6 +2,7 @@ import { FileUIPart } from "ai";
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { editImage } from "@/lib/edit-image";
+import { ToolType } from "@/lib/constants";
 
 const REMOVE_BACKGROUND_PROMPT =
   "Remove the background completely. Keep the main subject sharp and unchanged, preserve fine details such as hair and edges, and replace the background with transparency.";
@@ -16,6 +17,7 @@ type EditorState = {
   showHistory: boolean;
   isLoading: boolean;
   userFiles: FileUIPart[];
+  selectedTool: ToolType
   setUserFiles: (files: FileUIPart[]) => void;
   setHistoryIndex: (index: number) => void;
   setHistory: (history: string[]) => void;
@@ -30,6 +32,7 @@ type EditorState = {
   removeBackground: () => Promise<void>;
   refreshImage: () => Promise<void>;
   applyExpansion: (aspectRatio: string) => void;
+  setSelectedTool: (tool: ToolType) => void;
 };
 
 export const useEditorStore = create<EditorState>()(
@@ -42,6 +45,10 @@ export const useEditorStore = create<EditorState>()(
       showHistory: false,
       isLoading: false,
       userFiles: [],
+      selectedTool: ToolType.MOVE,
+      setSelectedTool: (tool: ToolType) => {
+        set({ selectedTool: tool})
+      },
       setUserFiles: (files: FileUIPart[]) => {
         set({
           userFiles: files

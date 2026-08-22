@@ -22,7 +22,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import GridItem from "@/components/grid-item";
-import { filters, ratios } from "@/lib/constants";
+import { filters, ratios, ToolType } from "@/lib/constants";
 import { ToolButton } from "@/components//tool-button";
 import { useEditorStore } from "@/store/useEditorState";
 
@@ -34,6 +34,8 @@ export const LeftSidebar = () => {
     refreshImage,
     image,
     isLoading,
+    setSelectedTool,
+    selectedTool
   } = useEditorStore();
 
   return (
@@ -49,26 +51,26 @@ export const LeftSidebar = () => {
 
             <div className="grid grid-cols-4 gap-2">
               <ToolButton
-                active={true}
-                onClick={()=>{}}
+                active={selectedTool === ToolType.MOVE}
+                onClick={()=>{ setSelectedTool(ToolType.MOVE) }}
                 icon={<Hand size={18} />}
                 label="Pan"
               />
               <ToolButton
-                active={false}
-                onClick={() => {}}
+                active={selectedTool === ToolType.RECTANGLE}
+                onClick={()=>{ setSelectedTool(ToolType.RECTANGLE) }}
                 icon={<Square size={18} />}
                 label="Select"
               />
               <ToolButton
-                active={false}
-                onClick={()=>{}}
+                active={selectedTool === ToolType.BRUSH}
+                onClick={()=>{ setSelectedTool(ToolType.BRUSH) }}
                 icon={<Brush size={18} />}
                 label="Brush"
               />
               <ToolButton
-                active={false}
-                onClick={()=>{}}
+                active={selectedTool === ToolType.ERASER}
+                onClick={()=>{ setSelectedTool(ToolType.ERASER) }}
                 icon={<Eraser size={18} />}
                 label="Erase"
               />

@@ -48,9 +48,16 @@ function getClientAddress(request: Request): string {
 export function assertRequestContentLength(
   request: Request,
   maxBytes: number,
+  requireHeader = false,
 ): void {
   const rawLength = request.headers.get("content-length");
-  if (!rawLength) return;
+
+  if (!rawLength) {
+    if (requireHeader) {
+      throw new ApiRequestError("Content-Length header is required.", 411);
+    }
+    return;
+  }
 
   const length = Number(rawLength);
   if (!Number.isFinite(length) || length < 0) {

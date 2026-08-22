@@ -3,35 +3,54 @@ import { useEditorStore } from "./useEditorState";
 
 const originalFetch = globalThis.fetch;
 
-afterEach(() => {
-  globalThis.fetch = originalFetch;
+function resetStore() {
   useEditorStore.setState({
     image: null,
-    imageFileId: null,
-    fileIdsByImage: {},
+    imageRef: null,
+    imageRefsByImage: {},
     mask: null,
     prompt: "",
     history: [],
     historyIndex: 0,
+    showHistory: false,
     isLoading: false,
     isUploading: false,
+    errorMessage: null,
+    userFiles: [],
   });
+}
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  resetStore();
 });
 
-test("tracks the server file ID for an uploaded image", () => {
+test("tracks the signed server reference for an uploaded image", () => {
   const image = "blob:http://localhost/source";
 
   useEditorStore.getState().setImage(image);
-  useEditorStore.getState().attachImageFileId(image, "file-source");
+  useEditorStore.getState().attachImageRef(image, "signed-source-ref");
 
-  expect(useEditorStore.getState().imageFileId).toBe("file-source");
-  expect(useEditorStore.getState().fileIdsByImage[image]).toBe("file-source");
+  expect(useEditorStore.getState().imageRef).toBe("signed-source-ref");
+  expect(useEditorStore.getState().imageRefsByImage[image]).toBe(
+    "signed-source-ref",
+  );
 });
 
-test("resets loading after an image edit request fails", async () => {
+test("ignores a file reference that belongs to a stale upload", () => {
+  useEditorStore.getState().setImage("blob:http://localhost/current");
   useEditorStore
     .getState()
-    .setImage("blob:http://localhost/source", "file-source");
+    .attachImageRef("blob:http://localhost/stale", "stale-ref");
+
+  expect(useEditorStore.getState().imageRef).toBeNull();
+  expect(useEditorStore.getState().imageRefsByImage).toEqual({});
+});
+
+test("resets loading and exposes an error after an edit request fails", async () => {
+  useEditorStore
+    .getState()
+    .setImage("blob:http://localhost/source", "signed-source-ref");
   useEditorStore.getState().setPrompt("Make it blue");
   globalThis.fetch = async () =>
     new Response(JSON.stringify({ error: "Editing failed." }), {
@@ -44,4 +63,43 @@ test("resets loading after an image edit request fails", async () => {
   expect(useEditorStore.getState().isLoading).toBe(true);
   await expect(generation).rejects.toThrow("Editing failed.");
   expect(useEditorStore.getState().isLoading).toBe(false);
+  expect(useEditorStore.getState().errorMessage).toBe("Editing failed.");
+});
+
+test("ignores out-of-range history indexes", () => {
+  useEditorStore.getState().setImage("blob:http://localhost/source", "source-ref");
+  useEditorStore.getState().setHistoryIndex(99);
+
+  expect(useEditorStore.getState().historyIndex).toBe(0);
+  expect(useEditorStore.getState().image).toBe("blob:http://localhost/source");
+});
+
+test("new edits after undo discard the redo branch", async () => {
+  useEditorStore.getState().setImage("blob:http://localhost/source", "source-ref");
+  useEditorStore.getState().setPrompt("First edit");
+
+  let requestCount = 0;
+  globalThis.fetch = async () => {
+    requestCount += 1;
+    return new Response(new Uint8Array([137, 80, 78, 71, requestCount]), {
+      status: 200,
+      headers: {
+        "Content-Type": "image/png",
+        "X-Image-Reference": `generated-ref-${requestCount}`,
+      },
+    });
+  };
+
+  await useEditorStore.getState().generateEdit();
+  await useEditorStore.getState().generateEdit();
+  expect(useEditorStore.getState().history).toHaveLength(3);
+
+  useEditorStore.getState().undo();
+  expect(useEditorStore.getState().historyIndex).toBe(1);
+
+  await useEditorStore.getState().generateEdit();
+
+  expect(useEditorStore.getState().history).toHaveLength(3);
+  expect(useEditorStore.getState().historyIndex).toBe(2);
+  expect(useEditorStore.getState().imageRef).toBe("generated-ref-3");
 });

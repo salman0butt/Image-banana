@@ -1,4 +1,4 @@
-import { FileUIPart } from "ai";
+import type { FileUIPart } from "ai";
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { editImage } from "@/lib/edit-image";
@@ -31,6 +31,7 @@ type EditorState = {
   undo: () => void;
   redo: () => void;
   setImage: (imageData: string, fileId?: string | null) => void;
+  clearImage: () => void;
   attachImageFileId: (imageData: string, fileId: string) => void;
   setPrompt: (prompt: string) => void;
   toggleHistory: () => void;
@@ -107,6 +108,15 @@ export const useEditorStore = create<EditorState>()(
             false,
             "setImage",
           ),
+        clearImage: () =>
+          set({
+            image: null,
+            imageFileId: null,
+            fileIdsByImage: {},
+            mask: null,
+            history: [],
+            historyIndex: 0,
+          }),
         attachImageFileId: (imageData, fileId) =>
           set((state) => ({
             imageFileId: state.image === imageData ? fileId : state.imageFileId,

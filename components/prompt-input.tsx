@@ -1,11 +1,11 @@
 "use client";
 
-import type { FileUIPart } from "ai";
 import { GlobeIcon, Loader2, Paperclip, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useEditorStore } from "@/store/useEditorState";
+import type { EditorReferenceFile } from "@/types/editor";
 
 const MAX_REFERENCE_FILES = 5;
 const MAX_REFERENCE_FILE_BYTES = 20 * 1024 * 1024;
@@ -46,7 +46,9 @@ export const AIPromptInput = () => {
     isLoading,
   } = useEditorStore();
 
-  attachmentsRef.current = attachments;
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
 
   useEffect(
     () => () => {
@@ -130,7 +132,7 @@ export const AIPromptInput = () => {
       return;
     }
 
-    const userFiles: FileUIPart[] = attachments.map((attachment) => ({
+    const userFiles: EditorReferenceFile[] = attachments.map((attachment) => ({
       type: "file",
       url: attachment.url,
       mediaType: attachment.mediaType,

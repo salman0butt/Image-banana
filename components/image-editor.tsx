@@ -16,37 +16,25 @@ function ImageEditor() {
 
 
     const draw = useCallback(() => {
-        if (!canvasRef.current) return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
 
         // draw the image
-        const ctx = canvasRef.current.getContext("2d");
+        const ctx = canvas.getContext("2d");
         if (!ctx || !imgRef.current) return;
 
-        ctx.clearRect(
-            0,
-            0,
-            canvasRef.current!.width,
-            canvasRef.current!.height,
-        );
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         ctx.drawImage(imgRef.current, 0, 0);
 
-        // copy mask to overlay canvas
-        ctx.save();
-
-        //todo: change global alpha
         const overlayCanvas = overlayCanvasRef.current;
         if (!overlayCanvas || !maskCanvasRef.current) return;
 
-        const overlayCtx = overlayCanvas?.getContext("2d");
+        const overlayCtx = overlayCanvas.getContext("2d");
         if (!overlayCtx) return;
 
-        overlayCtx.clearRect(
-            0,
-            0,
-            overlayCanvas.width,
-            overlayCanvas?.height,
-        );
+        // Copy the transparent edit region to a red preview overlay.
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
         overlayCtx.drawImage(maskCanvasRef.current, 0, 0);
 
@@ -75,8 +63,6 @@ function ImageEditor() {
 
         overlayCtx.putImageData(imageData, 0, 0);
         ctx.drawImage(overlayCanvas, 0, 0);
-
-        ctx.restore();
     }, []);
 
 
@@ -88,17 +74,20 @@ function ImageEditor() {
         img.src = image;
 
         img.onload = () => {
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+
             imgRef.current = img;
 
-            canvasRef.current!.width = img.naturalWidth;
-            canvasRef.current!.height = img.naturalHeight;
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
 
             // prepare initial mask
             maskCanvasRef.current =
                 document.createElement("canvas");
 
-            maskCanvasRef.current.width = img.width;
-            maskCanvasRef.current.height = img.height;
+            maskCanvasRef.current.width = img.naturalWidth;
+            maskCanvasRef.current.height = img.naturalHeight;
 
             const maskCtx =
                 maskCanvasRef.current.getContext("2d");
@@ -117,8 +106,8 @@ function ImageEditor() {
             overlayCanvasRef.current =
                 document.createElement("canvas");
 
-            overlayCanvasRef.current.width = img.width;
-            overlayCanvasRef.current.height = img.height;
+            overlayCanvasRef.current.width = img.naturalWidth;
+            overlayCanvasRef.current.height = img.naturalHeight;
 
             draw();
         };
@@ -126,21 +115,23 @@ function ImageEditor() {
 
     const startDrawing = (e: React.PointerEvent) => {
         if (selectedTool === ToolType.MOVE) return;
-        if (e.pointerType !== 'mouse') return;
 
         e.preventDefault();
 
         if (!canvasRef.current) return;
 
-        const rect = canvasRef.current.getBoundingClientRect();
-
-        const x = (e.clientX - rect.left) * (canvasRef.current.width / rect.width);
-        const y = (e.clientY - rect.top) * (canvasRef.current.height / rect.height);
-        startPosRef.current = { x, y };
+        const pos = getPointerPos(e);
+        startPosRef.current = pos;
         isDrawingRef.current = true;
         e.currentTarget.setPointerCapture(e.pointerId);
 
-        return { x, y }
+        if (
+            selectedTool === ToolType.BRUSH ||
+            selectedTool === ToolType.ERASER
+        ) {
+            updateMask(pos, pos);
+            draw();
+        }
     }
 
     const updateMask = (start: Point, end: Point) => {
@@ -253,12 +244,26 @@ function ImageEditor() {
         }
 
         if (maskCanvasRef.current) {
-            const dataUrl =
-                maskCanvasRef.current?.toDataURL("image/png");
-            setMask(dataUrl);
+            setMask(maskCanvasRef.current.toDataURL("image/png"));
         }
 
         startPosRef.current = null;
+    };
+
+    const cancelDrawing = (e: React.PointerEvent) => {
+        if (!isDrawingRef.current) return;
+
+        isDrawingRef.current = false;
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+
+        if (maskCanvasRef.current) {
+            setMask(maskCanvasRef.current.toDataURL("image/png"));
+        }
+
+        startPosRef.current = null;
+        draw();
     };
 
     return (
@@ -267,8 +272,9 @@ function ImageEditor() {
                 onPointerDown={startDrawing}
                 onPointerMove={drawMove}
                 onPointerUp={endDrawing}
+                onPointerCancel={cancelDrawing}
                 ref={canvasRef}
-                className="max-w-full max-h-full"
+                className="max-w-full max-h-full touch-none"
             />
         </div>
     )

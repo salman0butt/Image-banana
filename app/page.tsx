@@ -16,14 +16,31 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const {image, setImage, showHistory, isLoading} = useEditorStore()
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result;
-      setImage(result as string);
-    }
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-    reader.readAsDataURL(file as File)
+    // Keep the source and generated mask in the same PNG format and pixel
+    // dimensions, as required by the image edit API.
+    const objectUrl = URL.createObjectURL(file);
+    const uploadedImage = new window.Image();
+
+    uploadedImage.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = uploadedImage.naturalWidth;
+      canvas.height = uploadedImage.naturalHeight;
+
+      const context = canvas.getContext("2d");
+      if (context) {
+        context.drawImage(uploadedImage, 0, 0);
+        setImage(canvas.toDataURL("image/png"));
+      }
+
+      URL.revokeObjectURL(objectUrl);
+    };
+
+    uploadedImage.onerror = () => URL.revokeObjectURL(objectUrl);
+    uploadedImage.src = objectUrl;
+    e.target.value = "";
   }
 
 

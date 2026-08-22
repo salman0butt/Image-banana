@@ -20,7 +20,7 @@ type EditorState = {
   userFiles: FileUIPart[];
   selectedTool: ToolType;
   brushSize: number;
-  setMask: (mask: string) => void;
+  setMask: (mask: string | null) => void;
   setBrushSize: (size: number) => void;
   setUserFiles: (files: FileUIPart[]) => void;
   setHistoryIndex: (index: number) => void;
@@ -35,13 +35,22 @@ type EditorState = {
   applyFilter: (prompt: string) => Promise<void>;
   removeBackground: () => Promise<void>;
   refreshImage: () => Promise<void>;
-  applyExpansion: (aspectRatio: string) => void;
+  applyExpansion: (aspectRatio: string) => Promise<void>;
   setSelectedTool: (tool: ToolType) => void;
 };
 
 export const useEditorStore = create<EditorState>()(
   devtools(
-    (set, get) => ({
+    (set, get) => {
+      const commitImage = (image: string) =>
+        set((state) => ({
+          image,
+          mask: null,
+          history: [...state.history, image],
+          historyIndex: state.history.length,
+        }));
+
+      return {
       image: null,
       mask: null,
       prompt: "",
@@ -52,24 +61,18 @@ export const useEditorStore = create<EditorState>()(
       userFiles: [],
       selectedTool: ToolType.MOVE,
       brushSize: 100,
-      setMask: (mask: string) => {
-        set({ mask });
-      },
-      setBrushSize: (size: number) => {
-        set({ brushSize: size })
-      },
-      setSelectedTool: (tool: ToolType) => {
-        set({ selectedTool: tool })
-      },
-      setUserFiles: (files: FileUIPart[]) => {
-        set({
-          userFiles: files
-        })
-      },
+      setMask: (mask) => set({ mask }),
+      setBrushSize: (brushSize) => set({ brushSize }),
+      setSelectedTool: (selectedTool) => set({ selectedTool }),
+      setUserFiles: (userFiles) => set({ userFiles }),
       setImage: (imageData: string) =>
-        set({ image: imageData, history: [imageData] }, false, "setImage"),
+        set(
+          { image: imageData, mask: null, history: [imageData], historyIndex: 0 },
+          false,
+          "setImage",
+        ),
       setPrompt: (prompt) => set({ prompt }),
-      setHistory: ((history) => set({ history })),
+      setHistory: (history) => set({ history }),
       setHistoryIndex: (index: number) => {
         const state = get();
 
@@ -77,69 +80,29 @@ export const useEditorStore = create<EditorState>()(
           return;
         }
 
-        set({ historyIndex: index, image: state.history[index] })
+        set({ historyIndex: index, image: state.history[index], mask: null })
       },
       undo: () => {
-        const state = get();
-
-        if (state.historyIndex > 0) {
-          const newIndex = state.historyIndex - 1;
-          set({
-            image: state.history[newIndex],
-            historyIndex: newIndex
-          });
-        }
-
+        const { historyIndex, setHistoryIndex } = get();
+        if (historyIndex > 0) setHistoryIndex(historyIndex - 1);
       },
       redo: () => {
-        const state = get();
-
-        if (state.historyIndex < state.history.length - 1) {
-          const newIndex = state.historyIndex + 1;
-          set({
-            image: state.history[newIndex],
-            historyIndex: newIndex
-          })
+        const { historyIndex, history, setHistoryIndex } = get();
+        if (historyIndex < history.length - 1) {
+          setHistoryIndex(historyIndex + 1);
         }
-
       },
-      toggleHistory: () => {
-        const state = get();
-        if (state.history.length) {
-          set({
-            showHistory: !state.showHistory
-          })
-        }
-
-      },
-      setLoading: (val: boolean) => {
-        set({
-          isLoading: val
-        })
-      },
+      toggleHistory: () =>
+        set(({ history, showHistory }) =>
+          history.length ? { showHistory: !showHistory } : {}),
+      setLoading: (isLoading) => set({ isLoading }),
       generateEdit: async ({ webSearch = false } = {}) => {
-        const { image, prompt, history, userFiles, mask } = get();
+        const { image, prompt, userFiles, mask } = get();
         set({ isLoading: true });
 
-        const finalPrompt = `
-        TASK: Professional Image In-painting / Generative Fill.
-        ROLE: Expert Photo Retoucher.
-
-        INPUT DATA EXPLANATION:
-        - You have received a primary image and a corresponding mask image.
-        - The mask defines the precise editing region.
-        - TRANSPARENT pixels in the mask indicate the area where you must apply the user's instruction.
-        - OPAQUE pixels in the mask must remain exactly as they are in the original image.
-
-        USER GOAL:
-        "${prompt}"
-
-        EXECUTION GUIDELINES (CRITICAL):
-        1. IF REMOVING/ERASING: If the user asks to "remove", "erase", or "delete" an object, you MUST perform "Background Reconstruction". Analyze the surrounding background (wall, floor, nature) and seamlessly extend it over the masked area to hide the object.
-        2. IF CHANGING/REPLACING: If the user asks to add or change something, generate the new object strictly within the white mask, matching the scene's lighting and perspective.
-        3. SEAMLESS INTEGRATION: The new content generated inside the white masked area must perfectly match the surrounding environment's perspective, lighting direction, shadows, and color grading.
-        4. TEXTURE MATCHING: Replicate the exact film grain, noise level, and sharpness of the original photo to prevent a "pasted-on" look. The transition at the mask boundary must be invisible.
-        5. STRICT ISOLATION: Do not modify any pixels outside the designated white masked area under any circumstances`;
+        const finalPrompt = mask
+          ? `${prompt}\nEdit only the transparent mask region. Preserve the opaque region.`
+          : prompt;
 
         try {
           const imageBase64 = await editImage({
@@ -150,16 +113,7 @@ export const useEditorStore = create<EditorState>()(
             maskBase64: mask,
           });
 
-          const clonedHistory = [...history, imageBase64];
-          set(
-            {
-              image: imageBase64,
-              history: clonedHistory,
-              historyIndex: history.length,
-            },
-            false,
-            "setGeneratedImage",
-          );
+          commitImage(imageBase64);
         } catch (error) {
           throw error instanceof Error
             ? error
@@ -169,7 +123,7 @@ export const useEditorStore = create<EditorState>()(
         }
       },
       applyFilter: async (prompt: string) => {
-        const { image, history } = get();
+        const { image } = get();
         set({ isLoading: true });
 
         try {
@@ -178,11 +132,7 @@ export const useEditorStore = create<EditorState>()(
             prompt,
           });
 
-          set({
-            image: imageBase64,
-            history: [...history, imageBase64],
-            historyIndex: history.length,
-          });
+          commitImage(imageBase64);
         } catch (error) {
           throw error instanceof Error
             ? error
@@ -194,25 +144,12 @@ export const useEditorStore = create<EditorState>()(
       removeBackground: () => get().applyFilter(REMOVE_BACKGROUND_PROMPT),
       refreshImage: () => get().applyFilter(REFRESH_IMAGE_PROMPT),
       applyExpansion: async (aspectRatio: string) => {
-        const { image, history, prompt } = get();
-        set({ isLoading: true });
-
+        const { image, prompt } = get();
         if (!image) return;
 
-        const baseInstructions = `High-fidelity outpainting. Analyze the visual context of the original image and seamlessly extend
-        the scenery into the empty areas. Ensure the person's face and features remain: completely
-        unchanged`;
+        set({ isLoading: true });
 
-        const technicalConstraint = `Strictly maintain the continuity of existing lines, horizon, textures, lighting, and
-        perspective. The transition must be invisible. Do not alter the style or content of the original center image`
-
-        const userContext = prompt ? `Addtional contect/subject for extension: ${prompt}` : "";
-
-        const finalPrompt = `
-          ${baseInstructions}
-          ${technicalConstraint}
-          ${userContext}
-        `
+        const finalPrompt = `Seamlessly extend the image for ${aspectRatio}. Preserve existing subjects, faces, composition, lighting, textures, and perspective.${prompt ? ` ${prompt}` : ""}`;
         try {
           const imageBase64 = await editImage({
             imageBase64: image,
@@ -220,11 +157,7 @@ export const useEditorStore = create<EditorState>()(
             aspectRatio
           });
 
-          set({
-            image: imageBase64,
-            history: [...history, imageBase64],
-            historyIndex: history.length,
-          });
+          commitImage(imageBase64);
         } catch (error) {
           throw error instanceof Error
             ? error
@@ -232,8 +165,9 @@ export const useEditorStore = create<EditorState>()(
         } finally {
           set({ isLoading: false });
         }
-      }
-    }),
+      },
+      };
+    },
     { name: "EditorStore" },
   ),
 );

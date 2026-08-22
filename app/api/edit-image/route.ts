@@ -6,6 +6,7 @@ import {
   parseReferenceFiles,
 } from "@/lib/openai-files";
 import { normalizeAspectRatio, resolveImageSize } from "@/lib/image-size";
+import { validateMaskPair } from "@/lib/image-mask";
 import { getGeneratedImage, mapOpenAIError } from "@/lib/openai-image";
 
 export const runtime = "nodejs";
@@ -59,11 +60,16 @@ export async function readEditImageRequest(
 
   const userFiles = parseReferenceFiles(payload.userFiles);
   const aspectRatio = normalizeAspectRatio(payload.aspectRatio);
+  const imageDataUrl = toImageDataUrl(payload.imageBase64);
   const maskBase64 =
     payload.maskBase64 == null ? null : toImageDataUrl(payload.maskBase64);
 
+  if (maskBase64) {
+    await validateMaskPair(imageDataUrl, maskBase64);
+  }
+
   return {
-    imageDataUrl: toImageDataUrl(payload.imageBase64),
+    imageDataUrl,
     maskBase64,
     prompt,
     webSearch: payload.webSearch === true,
@@ -189,9 +195,9 @@ export async function POST(request: Request) {
       tool_choice: { type: "image_generation" },
     });
 
-    const outputImage = getGeneratedImage(response);
+    const generatedImage = getGeneratedImage(response);
 
-    if (!outputImage) {
+    if (!generatedImage) {
       return Response.json(
         { error: "OpenAI did not return an edited image." },
         { status: 502 },
@@ -199,7 +205,7 @@ export async function POST(request: Request) {
     }
 
     return Response.json({
-      imageBase64: outputImage,
+      imageBase64: generatedImage,
       prompt: input.prompt,
       webSearchUsed: input.webSearch,
     });

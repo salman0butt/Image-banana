@@ -34,11 +34,14 @@ export const LeftSidebar = () => {
     refreshImage,
     image,
     isLoading,
+    isUploading,
     setSelectedTool,
     selectedTool,
     brushSize,
-    setBrushSize
+    setBrushSize,
   } = useEditorStore();
+
+  const aiActionDisabled = !image || isLoading || isUploading;
 
   return (
     <aside className="hidden md:flex w-80 flex-col border-r border-zinc-800 bg-zinc-950/50 z-20 shrink-0 h-full">
@@ -54,25 +57,33 @@ export const LeftSidebar = () => {
             <div className="grid grid-cols-4 gap-2">
               <ToolButton
                 active={selectedTool === ToolType.MOVE}
-                onClick={() => { setSelectedTool(ToolType.MOVE) }}
+                onClick={() => {
+                  setSelectedTool(ToolType.MOVE);
+                }}
                 icon={<Hand size={18} />}
                 label="Pan"
               />
               <ToolButton
                 active={selectedTool === ToolType.RECTANGLE}
-                onClick={() => { setSelectedTool(ToolType.RECTANGLE) }}
+                onClick={() => {
+                  setSelectedTool(ToolType.RECTANGLE);
+                }}
                 icon={<Square size={18} />}
                 label="Select"
               />
               <ToolButton
                 active={selectedTool === ToolType.BRUSH}
-                onClick={() => { setSelectedTool(ToolType.BRUSH) }}
+                onClick={() => {
+                  setSelectedTool(ToolType.BRUSH);
+                }}
                 icon={<Brush size={18} />}
                 label="Brush"
               />
               <ToolButton
                 active={selectedTool === ToolType.ERASER}
-                onClick={() => { setSelectedTool(ToolType.ERASER) }}
+                onClick={() => {
+                  setSelectedTool(ToolType.ERASER);
+                }}
                 icon={<Eraser size={18} />}
                 label="Erase"
               />
@@ -89,7 +100,6 @@ export const LeftSidebar = () => {
                 </span>
               </div>
 
-              {/* Custom styled slider to force yellow theme regardless of global primary color */}
               <Slider
                 defaultValue={[brushSize]}
                 max={100}
@@ -119,7 +129,6 @@ export const LeftSidebar = () => {
               className="w-full"
               defaultValue="options"
             >
-              {/* Item 1: Editing Options */}
               <AccordionItem value="options" className="border-zinc-800">
                 <AccordionTrigger className="text-zinc-200 hover:text-yellow-500 hover:no-underline py-3 transition-colors">
                   <div className="flex items-center gap-2">
@@ -131,25 +140,24 @@ export const LeftSidebar = () => {
                   <div className="grid grid-cols-2 gap-2">
                     <GridItem
                       icon={Delete}
-                      label={"Remove Background"}
+                      label="Remove Background"
                       onClick={() => {
                         void removeBackground();
                       }}
-                      disabled={!image || isLoading}
+                      disabled={aiActionDisabled}
                     />
                     <GridItem
                       icon={Sparkles}
-                      label={"AI Refreshment"}
+                      label="AI Refreshment"
                       onClick={() => {
                         void refreshImage();
                       }}
-                      disabled={!image || isLoading}
+                      disabled={aiActionDisabled}
                     />
                   </div>
                 </AccordionContent>
               </AccordionItem>
 
-              {/* Item 2: AI Filters */}
               <AccordionItem value="filters" className="border-zinc-800">
                 <AccordionTrigger className="text-zinc-200 hover:text-yellow-500 hover:no-underline py-3 transition-colors">
                   <div className="flex items-center gap-2">
@@ -159,25 +167,22 @@ export const LeftSidebar = () => {
                 </AccordionTrigger>
                 <AccordionContent className="pt-2 pb-4">
                   <div className="grid grid-cols-2 gap-2">
-                    {filters.map((item, index) => {
-                      return (
-                        <GridItem
-                          key={index}
-                          image={item.image}
-                          label={item.name}
-                          desc={item.prompt}
-                          onClick={() => {
-                            applyFilter(item.prompt);
-                          }}
-                          disabled={false}
-                        />
-                      );
-                    })}
+                    {filters.map((item, index) => (
+                      <GridItem
+                        key={index}
+                        image={item.image}
+                        label={item.name}
+                        desc={item.prompt}
+                        onClick={() => {
+                          void applyFilter(item.prompt);
+                        }}
+                        disabled={aiActionDisabled}
+                      />
+                    ))}
                   </div>
                 </AccordionContent>
               </AccordionItem>
 
-              {/* Item 3: AI Expansion */}
               <AccordionItem value="expansion" className="border-none">
                 <AccordionTrigger className="text-zinc-200 hover:text-yellow-500 hover:no-underline py-3 transition-colors">
                   <div className="flex items-center gap-2">
@@ -194,9 +199,9 @@ export const LeftSidebar = () => {
                         label={r.label}
                         desc={r.desc}
                         onClick={() => {
-                          applyExpansion(r.aspectRatio)
+                          void applyExpansion(r.aspectRatio);
                         }}
-                        disabled={false}
+                        disabled={aiActionDisabled}
                       />
                     ))}
                   </div>

@@ -17,6 +17,7 @@ export default function Home() {
   const {
     image,
     setImage,
+    clearImage,
     attachImageFileId,
     setUploading,
     showHistory,
@@ -37,6 +38,8 @@ export default function Home() {
       attachImageFileId(previewUrl, fileId);
     } catch (error) {
       console.error("Image upload failed:", error);
+      clearImage();
+      URL.revokeObjectURL(previewUrl);
     } finally {
       setUploading(false);
     }

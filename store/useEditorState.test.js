@@ -72,9 +72,15 @@ test("cancels an active edit request with AbortController", async () => {
   useEditorStore.getState().setPrompt("Make it blue");
 
   let requestSignal;
+  let markRequestStarted;
+  const requestStarted = new Promise((resolve) => {
+    markRequestStarted = resolve;
+  });
+
   globalThis.fetch = (_input, init) =>
     new Promise((_resolve, reject) => {
       requestSignal = init?.signal;
+      markRequestStarted();
       requestSignal?.addEventListener(
         "abort",
         () => {
@@ -87,7 +93,7 @@ test("cancels an active edit request with AbortController", async () => {
     });
 
   const generation = useEditorStore.getState().generateEdit();
-  await Promise.resolve();
+  await requestStarted;
 
   expect(requestSignal).toBeDefined();
   expect(useEditorStore.getState().isLoading).toBe(true);

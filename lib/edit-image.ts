@@ -1,12 +1,16 @@
 import type { FileUIPart } from "ai";
 
+const MAX_REFERENCE_FILES = 5;
+const MAX_REFERENCE_FILE_BYTES = 20 * 1024 * 1024;
+
 type EditImageOptions = {
-  imageFileId: string;
+  imageRef: string;
   prompt: string;
   webSearch?: boolean;
   userFiles?: FileUIPart[];
   aspectRatio?: string;
   mask?: Blob | null;
+  signal?: AbortSignal;
 };
 
 type EditImageErrorResponse = {
@@ -16,7 +20,7 @@ type EditImageErrorResponse = {
 
 type EditImageResult = {
   imageUrl: string;
-  fileId: string;
+  imageRef: string;
 };
 
 async function readError(response: Response): Promise<EditImageErrorResponse> {
@@ -27,28 +31,74 @@ async function readError(response: Response): Promise<EditImageErrorResponse> {
   }
 }
 
+function safeFilename(filename: string | undefined, index: number): string {
+  const sanitized = filename
+    ?.replace(/[\\/\0-\x1f\x7f]+/g, "_")
+    .trim()
+    .slice(0, 120);
+
+  return sanitized || `reference-${index + 1}`;
+}
+
+async function appendReferenceFiles(
+  formData: FormData,
+  files: FileUIPart[],
+  signal?: AbortSignal,
+): Promise<void> {
+  if (files.length > MAX_REFERENCE_FILES) {
+    throw new Error(`Attach at most ${MAX_REFERENCE_FILES} reference files.`);
+  }
+
+  await Promise.all(
+    files.map(async (file, index) => {
+      if (!file.url.startsWith("blob:") && !file.url.startsWith("data:")) {
+        throw new Error("Reference attachments must be local uploads.");
+      }
+
+      const response = await fetch(file.url, { signal });
+      if (!response.ok) {
+        throw new Error(`Could not read reference file ${index + 1}.`);
+      }
+
+      const blob = await response.blob();
+      if (!blob.size) {
+        throw new Error(`Reference file ${index + 1} is empty.`);
+      }
+
+      if (blob.size > MAX_REFERENCE_FILE_BYTES) {
+        throw new Error("Each reference file must be smaller than 20 MB.");
+      }
+
+      formData.append("referenceFile", blob, safeFilename(file.filename, index));
+    }),
+  );
+}
+
 export async function editImage({
-  imageFileId,
+  imageRef,
   prompt,
   webSearch = false,
   userFiles = [],
   aspectRatio = "",
   mask = null,
+  signal,
 }: EditImageOptions): Promise<EditImageResult> {
   const formData = new FormData();
-  formData.append("imageFileId", imageFileId);
+  formData.append("imageRef", imageRef);
   formData.append("prompt", prompt);
   formData.append("webSearch", String(webSearch));
-  formData.append("userFiles", JSON.stringify(userFiles));
   formData.append("aspectRatio", aspectRatio);
 
   if (mask) {
     formData.append("mask", mask, "mask.png");
   }
 
+  await appendReferenceFiles(formData, userFiles, signal);
+
   const response = await fetch("/api/edit-image", {
     method: "POST",
     body: formData,
+    signal,
   });
 
   if (!response.ok) {
@@ -62,10 +112,15 @@ export async function editImage({
     throw new Error(message);
   }
 
-  const fileId = response.headers.get("x-image-file-id");
+  const imageRefHeader = response.headers.get("x-image-reference");
 
-  if (!fileId) {
-    throw new Error("The API returned no image file ID.");
+  if (!imageRefHeader) {
+    throw new Error("The API returned no image reference.");
+  }
+
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.startsWith("image/")) {
+    throw new Error("The API returned an invalid image response.");
   }
 
   const imageBlob = await response.blob();
@@ -76,6 +131,6 @@ export async function editImage({
 
   return {
     imageUrl: URL.createObjectURL(imageBlob),
-    fileId,
+    imageRef: imageRefHeader,
   };
 }

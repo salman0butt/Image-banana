@@ -28,6 +28,7 @@ type EditorState = {
   showHistory: boolean;
   isLoading: boolean;
   isUploading: boolean;
+  errorMessage: string | null;
   userFiles: FileUIPart[];
   selectedTool: ToolType;
   brushSize: number;
@@ -42,6 +43,7 @@ type EditorState = {
   clearImage: () => void;
   attachImageRef: (imageData: string, imageRef: string) => void;
   setPrompt: (prompt: string) => void;
+  setErrorMessage: (message: string | null) => void;
   toggleHistory: () => void;
   setLoading: (val: boolean) => void;
   setUploading: (val: boolean) => void;
@@ -66,10 +68,15 @@ function revokeImageUrl(url: string): void {
 
 function isAbortError(error: unknown): boolean {
   return (
-    error instanceof DOMException
-      ? error.name === "AbortError"
-      : error instanceof Error && error.name === "AbortError"
+    (typeof DOMException !== "undefined" &&
+      error instanceof DOMException &&
+      error.name === "AbortError") ||
+    (error instanceof Error && error.name === "AbortError")
   );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Image editing failed.";
 }
 
 export const useEditorStore = create<EditorState>()(
@@ -115,6 +122,7 @@ export const useEditorStore = create<EditorState>()(
           history: [...retainedHistory, image],
           historyIndex: retainedHistory.length,
           userFiles: [],
+          errorMessage: null,
         });
       };
 
@@ -127,14 +135,24 @@ export const useEditorStore = create<EditorState>()(
       }: RunEditOptions) => {
         const normalizedPrompt = prompt.trim();
         if (!normalizedPrompt) {
-          throw new Error("Enter an edit instruction before generating.");
+          const message = "Enter an edit instruction before generating.";
+          set({ errorMessage: message });
+          throw new Error(message);
         }
 
-        const imageRef = requireUploadedImage();
+        let imageRef: string;
+        try {
+          imageRef = requireUploadedImage();
+        } catch (error) {
+          const message = errorMessage(error);
+          set({ errorMessage: message });
+          throw error;
+        }
+
         activeEditController?.abort();
         const controller = new AbortController();
         activeEditController = controller;
-        set({ isLoading: true });
+        set({ isLoading: true, errorMessage: null });
 
         try {
           const result = await editImage({
@@ -157,9 +175,9 @@ export const useEditorStore = create<EditorState>()(
             throw new Error("Image edit cancelled.");
           }
 
-          throw error instanceof Error
-            ? error
-            : new Error("Image editing failed.");
+          const message = errorMessage(error);
+          set({ errorMessage: message });
+          throw error instanceof Error ? error : new Error(message);
         } finally {
           if (activeEditController === controller) {
             activeEditController = null;
@@ -179,6 +197,7 @@ export const useEditorStore = create<EditorState>()(
         showHistory: false,
         isLoading: false,
         isUploading: false,
+        errorMessage: null,
         userFiles: [],
         selectedTool: ToolType.MOVE,
         brushSize: 100,
@@ -187,6 +206,8 @@ export const useEditorStore = create<EditorState>()(
         setSelectedTool: (selectedTool) => set({ selectedTool }),
         setUserFiles: (userFiles) => set({ userFiles }),
         setImage: (imageData, imageRef = null) => {
+          activeEditController?.abort();
+          activeEditController = null;
           const state = get();
           state.history
             .filter((url) => url !== imageData)
@@ -201,13 +222,17 @@ export const useEditorStore = create<EditorState>()(
               history: [imageData],
               historyIndex: 0,
               showHistory: false,
+              isLoading: false,
               userFiles: [],
+              errorMessage: null,
             },
             false,
             "setImage",
           );
         },
         clearImage: () => {
+          activeEditController?.abort();
+          activeEditController = null;
           get().history.forEach(revokeImageUrl);
           set({
             image: null,
@@ -217,19 +242,27 @@ export const useEditorStore = create<EditorState>()(
             history: [],
             historyIndex: 0,
             showHistory: false,
+            isLoading: false,
             isUploading: false,
             userFiles: [],
           });
         },
         attachImageRef: (imageData, imageRef) =>
-          set((state) => ({
-            imageRef: state.image === imageData ? imageRef : state.imageRef,
-            imageRefsByImage: {
-              ...state.imageRefsByImage,
-              [imageData]: imageRef,
-            },
-          })),
+          set((state) => {
+            if (state.image !== imageData || !state.history.includes(imageData)) {
+              return {};
+            }
+
+            return {
+              imageRef,
+              imageRefsByImage: {
+                ...state.imageRefsByImage,
+                [imageData]: imageRef,
+              },
+            };
+          }),
         setPrompt: (prompt) => set({ prompt }),
+        setErrorMessage: (errorMessage) => set({ errorMessage }),
         setHistoryIndex: (index) => {
           const state = get();
 
@@ -248,6 +281,7 @@ export const useEditorStore = create<EditorState>()(
             image,
             imageRef: state.imageRefsByImage[image] ?? null,
             mask: null,
+            errorMessage: null,
           });
         },
         clearHistoryExceptCurrent: () => {
@@ -287,6 +321,7 @@ export const useEditorStore = create<EditorState>()(
         setUploading: (isUploading) => set({ isUploading }),
         cancelEdit: () => {
           activeEditController?.abort();
+          set({ errorMessage: null });
         },
         generateEdit: async ({ webSearch = false } = {}) => {
           const { prompt, userFiles, mask } = get();

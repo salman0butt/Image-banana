@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 
+import { signOut } from "@/app/auth/actions";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
-import { signOut } from "@/app/auth/actions";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -12,11 +12,10 @@ export default async function AccountPage({
   searchParams: SearchParams;
 }) {
   const supabase = await createClient();
-  const {
-    data: { claims },
-  } = await supabase.auth.getClaims();
+  const { data, error: claimsError } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+  const userId = !claimsError && typeof claims?.sub === "string" ? claims.sub : null;
 
-  const userId = typeof claims?.sub === "string" ? claims.sub : null;
   if (!userId) {
     redirect("/auth/login?next=/account");
   }

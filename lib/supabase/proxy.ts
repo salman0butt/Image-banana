@@ -46,12 +46,11 @@ export async function updateSession(
     },
   });
 
-  const {
-    data: { claims },
-  } = await supabase.auth.getClaims();
+  const { data, error } = await supabase.auth.getClaims();
+  const claims = data?.claims;
 
   return {
     response,
-    userId: typeof claims?.sub === "string" ? claims.sub : null,
+    userId: !error && typeof claims?.sub === "string" ? claims.sub : null,
   };
 }

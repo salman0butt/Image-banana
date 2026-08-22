@@ -147,11 +147,10 @@ export async function updatePassword(formData: FormData) {
   }
 
   const supabase = await createClient();
-  const {
-    data: { claims },
-  } = await supabase.auth.getClaims();
+  const { data, error: claimsError } = await supabase.auth.getClaims();
+  const claims = data?.claims;
 
-  if (!claims?.sub) {
+  if (claimsError || !claims?.sub) {
     redirectWithMessage(
       "/auth/login",
       "error",

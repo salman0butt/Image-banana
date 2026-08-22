@@ -1,37 +1,58 @@
 import type { FileUIPart } from "ai";
 
 type EditImageOptions = {
-  imageBase64: string | null;
+  imageFileId: string;
   prompt: string;
   webSearch?: boolean;
   userFiles?: FileUIPart[];
   aspectRatio?: string;
-  maskBase64?: string | null;
+  mask?: Blob | null;
 };
 
-type EditImageResponse = {
-  imageBase64?: unknown;
+type EditImageErrorResponse = {
   details?: unknown;
   error?: unknown;
 };
 
+type EditImageResult = {
+  imageUrl: string;
+  fileId: string;
+};
+
+async function readError(response: Response): Promise<EditImageErrorResponse> {
+  try {
+    return (await response.json()) as EditImageErrorResponse;
+  } catch {
+    return {};
+  }
+}
+
 export async function editImage({
-  imageBase64,
+  imageFileId,
   prompt,
   webSearch = false,
   userFiles = [],
-  aspectRatio = '',
-  maskBase64 = null
-}: EditImageOptions): Promise<string> {
+  aspectRatio = "",
+  mask = null,
+}: EditImageOptions): Promise<EditImageResult> {
+  const formData = new FormData();
+  formData.append("imageFileId", imageFileId);
+  formData.append("prompt", prompt);
+  formData.append("webSearch", String(webSearch));
+  formData.append("userFiles", JSON.stringify(userFiles));
+  formData.append("aspectRatio", aspectRatio);
+
+  if (mask) {
+    formData.append("mask", mask, "mask.png");
+  }
+
   const response = await fetch("/api/edit-image", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ imageBase64, prompt, webSearch, userFiles, aspectRatio, maskBase64 }),
+    body: formData,
   });
 
-  const data = (await response.json()) as EditImageResponse;
-
   if (!response.ok) {
+    const data = await readError(response);
     const message =
       typeof data.details === "string"
         ? data.details
@@ -41,9 +62,20 @@ export async function editImage({
     throw new Error(message);
   }
 
-  if (typeof data.imageBase64 !== "string" || !data.imageBase64) {
+  const fileId = response.headers.get("x-image-file-id");
+
+  if (!fileId) {
+    throw new Error("The API returned no image file ID.");
+  }
+
+  const imageBlob = await response.blob();
+
+  if (!imageBlob.size) {
     throw new Error("The API returned no image.");
   }
 
-  return data.imageBase64;
+  return {
+    imageUrl: URL.createObjectURL(imageBlob),
+    fileId,
+  };
 }

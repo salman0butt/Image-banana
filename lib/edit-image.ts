@@ -5,7 +5,8 @@ type EditImageOptions = {
   prompt: string;
   webSearch?: boolean;
   userFiles?: FileUIPart[];
-  aspectRatio?: string
+  aspectRatio?: string;
+  maskBase64?: string | null;
 };
 
 type EditImageResponse = {
@@ -19,12 +20,13 @@ export async function editImage({
   prompt,
   webSearch = false,
   userFiles = [],
-  aspectRatio = ''
+  aspectRatio = '',
+  maskBase64 = null
 }: EditImageOptions): Promise<string> {
   const response = await fetch("/api/edit-image", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ imageBase64, prompt, webSearch, userFiles, aspectRatio }),
+    body: JSON.stringify({ imageBase64, prompt, webSearch, userFiles, aspectRatio, maskBase64 }),
   });
 
   const data = (await response.json()) as EditImageResponse;

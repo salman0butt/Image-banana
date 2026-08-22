@@ -24,6 +24,7 @@ function envOption<const T extends readonly string[]>(
 
 type EditImageRequest = {
   imageDataUrl: string;
+  maskBase64: string | null;
   prompt: string;
   webSearch: boolean;
   userFiles: FileUIPart[];
@@ -58,9 +59,12 @@ export async function readEditImageRequest(
 
   const userFiles = parseReferenceFiles(payload.userFiles);
   const aspectRatio = normalizeAspectRatio(payload.aspectRatio);
+  const maskBase64 =
+    payload.maskBase64 == null ? null : toImageDataUrl(payload.maskBase64);
 
   return {
     imageDataUrl: toImageDataUrl(payload.imageBase64),
+    maskBase64,
     prompt,
     webSearch: payload.webSearch === true,
     userFiles,
@@ -168,6 +172,9 @@ export async function POST(request: Request) {
             "low",
           ),
           size: imageSize,
+          ...(input.maskBase64
+            ? { input_image_mask: { image_url: input.maskBase64 } }
+            : {}),
           ...(imageModel === "gpt-image-2" || imageModel.startsWith("gpt-image-2-")
             ? {}
             : {

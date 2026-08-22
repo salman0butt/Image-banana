@@ -35,7 +35,9 @@ export const LeftSidebar = () => {
     image,
     isLoading,
     setSelectedTool,
-    selectedTool
+    selectedTool,
+    brushSize,
+    setBrushSize
   } = useEditorStore();
 
   return (
@@ -52,25 +54,25 @@ export const LeftSidebar = () => {
             <div className="grid grid-cols-4 gap-2">
               <ToolButton
                 active={selectedTool === ToolType.MOVE}
-                onClick={()=>{ setSelectedTool(ToolType.MOVE) }}
+                onClick={() => { setSelectedTool(ToolType.MOVE) }}
                 icon={<Hand size={18} />}
                 label="Pan"
               />
               <ToolButton
                 active={selectedTool === ToolType.RECTANGLE}
-                onClick={()=>{ setSelectedTool(ToolType.RECTANGLE) }}
+                onClick={() => { setSelectedTool(ToolType.RECTANGLE) }}
                 icon={<Square size={18} />}
                 label="Select"
               />
               <ToolButton
                 active={selectedTool === ToolType.BRUSH}
-                onClick={()=>{ setSelectedTool(ToolType.BRUSH) }}
+                onClick={() => { setSelectedTool(ToolType.BRUSH) }}
                 icon={<Brush size={18} />}
                 label="Brush"
               />
               <ToolButton
                 active={selectedTool === ToolType.ERASER}
-                onClick={()=>{ setSelectedTool(ToolType.ERASER) }}
+                onClick={() => { setSelectedTool(ToolType.ERASER) }}
                 icon={<Eraser size={18} />}
                 label="Erase"
               />
@@ -83,17 +85,18 @@ export const LeftSidebar = () => {
                   Size
                 </h3>
                 <span className="text-xs font-mono text-zinc-200 bg-zinc-900 border border-zinc-800 px-2 py-1 rounded">
-                  10px
+                  {brushSize}
                 </span>
               </div>
 
               {/* Custom styled slider to force yellow theme regardless of global primary color */}
               <Slider
-                defaultValue={[10]}
+                defaultValue={[brushSize]}
                 max={100}
                 min={5}
                 step={1}
-                onValueChange={()=>{
+                onValueChange={(value) => {
+                  setBrushSize(value[0]);
                 }}
                 className="py-2 [&>.relative>.absolute]:bg-yellow-500 **:[[role=slider]]:border-yellow-500 **:[[role=slider]]:bg-zinc-950 **:[[role=slider]]:ring-offset-zinc-950 **:[[role=slider]]:focus-visible:ring-yellow-500"
               />

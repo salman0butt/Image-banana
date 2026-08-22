@@ -1,12 +1,11 @@
-import OpenAI from "openai";
+import OpenAI, { toFile } from "openai";
 import type { FileUIPart } from "ai";
-import { toImageDataUrl } from "@/lib/image-data";
+import sharp from "sharp";
 import {
   buildReferenceContent,
   parseReferenceFiles,
 } from "@/lib/openai-files";
 import { normalizeAspectRatio, resolveImageSize } from "@/lib/image-size";
-import { validateMaskPair } from "@/lib/image-mask";
 import { getGeneratedImage, mapOpenAIError } from "@/lib/openai-image";
 
 export const runtime = "nodejs";
@@ -14,6 +13,9 @@ export const runtime = "nodejs";
 const IMAGE_QUALITIES = ["low", "medium", "high", "auto"] as const;
 const IMAGE_SIZES = ["1024x1024", "1536x1024", "1024x1536", "auto"] as const;
 const INPUT_FIDELITIES = ["low", "high"] as const;
+const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
+const FILE_TTL_SECONDS = 24 * 60 * 60;
+const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
 
 function envOption<const T extends readonly string[]>(
   value: string | undefined,
@@ -24,58 +26,126 @@ function envOption<const T extends readonly string[]>(
 }
 
 type EditImageRequest = {
-  imageDataUrl: string;
-  maskBase64: string | null;
+  imageFileId: string;
+  mask: File | null;
   prompt: string;
   webSearch: boolean;
   userFiles: FileUIPart[];
   aspectRatio: string;
 };
 
+function parseJsonField(value: FormDataEntryValue | null, label: string): unknown {
+  if (typeof value !== "string" || !value) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    throw new Error(`Invalid ${label}.`);
+  }
+}
+
 export async function readEditImageRequest(
   request: Request,
 ): Promise<EditImageRequest> {
-  let body: unknown;
+  let formData: FormData;
 
   try {
-    body = await request.json();
+    formData = await request.formData();
   } catch {
-    throw new Error("Invalid JSON request body.");
+    throw new Error("Invalid multipart request body.");
   }
 
-  if (!body || typeof body !== "object") {
-    throw new Error("Invalid JSON request body.");
-  }
+  const imageFileId = formData.get("imageFileId");
+  const promptValue = formData.get("prompt");
+  const maskValue = formData.get("mask");
+  const prompt = typeof promptValue === "string" ? promptValue.trim() : "";
 
-  const requestBody = body as Record<string, unknown>;
-  const payload =
-    requestBody.payload && typeof requestBody.payload === "object"
-      ? (requestBody.payload as Record<string, unknown>)
-      : requestBody;
-  const prompt = typeof payload.prompt === "string" ? payload.prompt.trim() : "";
+  if (typeof imageFileId !== "string" || !imageFileId.trim()) {
+    throw new Error("An uploaded image file ID is required.");
+  }
 
   if (!prompt) {
     throw new Error("A prompt is required.");
   }
 
-  const userFiles = parseReferenceFiles(payload.userFiles);
-  const aspectRatio = normalizeAspectRatio(payload.aspectRatio);
-  const imageDataUrl = toImageDataUrl(payload.imageBase64);
-  const maskBase64 =
-    payload.maskBase64 == null ? null : toImageDataUrl(payload.maskBase64);
+  if (maskValue && typeof maskValue !== "string") {
+    if (!maskValue.size) {
+      throw new Error("The mask is empty.");
+    }
 
-  if (maskBase64) {
-    await validateMaskPair(imageDataUrl, maskBase64);
+    if (maskValue.size > MAX_IMAGE_BYTES) {
+      throw new Error("The mask must be smaller than 50 MB.");
+    }
   }
 
+  const userFiles = parseReferenceFiles(
+    parseJsonField(formData.get("userFiles"), "reference files"),
+  );
+  const aspectRatio = normalizeAspectRatio(formData.get("aspectRatio"));
+
   return {
-    imageDataUrl,
-    maskBase64,
+    imageFileId: imageFileId.trim(),
+    mask: maskValue && typeof maskValue !== "string" ? maskValue : null,
     prompt,
-    webSearch: payload.webSearch === true,
+    webSearch: formData.get("webSearch") === "true",
     userFiles,
     aspectRatio,
   };
+}
+
+async function uploadMask(client: OpenAI, mask: File): Promise<string> {
+  const buffer = Buffer.from(await mask.arrayBuffer());
+  const metadata = await sharp(buffer).metadata();
+
+  if (!metadata.width || !metadata.height || metadata.format !== "png") {
+    throw new Error("The mask must be a valid PNG image.");
+  }
+
+  if (metadata.hasAlpha !== true) {
+    throw new Error("The mask must contain an alpha channel.");
+  }
+
+  const uploaded = await client.files.create({
+    file: await toFile(buffer, "mask.png", { type: "image/png" }),
+    purpose: "vision",
+    expires_after: {
+      anchor: "created_at",
+      seconds: FILE_TTL_SECONDS,
+    },
+  });
+
+  return uploaded.id;
+}
+
+async function uploadGeneratedImage(
+  client: OpenAI,
+  generatedImage: string,
+): Promise<{ buffer: Buffer; fileId: string }> {
+  if (!generatedImage.startsWith(PNG_DATA_URL_PREFIX)) {
+    throw new Error("OpenAI returned an unsupported image format.");
+  }
+
+  const buffer = Buffer.from(
+    generatedImage.slice(PNG_DATA_URL_PREFIX.length),
+    "base64",
+  );
+
+  if (!buffer.length) {
+    throw new Error("OpenAI returned an empty image.");
+  }
+
+  const uploaded = await client.files.create({
+    file: await toFile(buffer, "generated.png", { type: "image/png" }),
+    purpose: "vision",
+    expires_after: {
+      anchor: "created_at",
+      seconds: FILE_TTL_SECONDS,
+    },
+  });
+
+  return { buffer, fileId: uploaded.id };
 }
 
 export async function POST(request: Request) {
@@ -87,7 +157,9 @@ export async function POST(request: Request) {
     return Response.json(
       {
         error:
-          error instanceof Error ? error.message : "Invalid JSON request body.",
+          error instanceof Error
+            ? error.message
+            : "Invalid multipart request body.",
       },
       { status: 400 },
     );
@@ -129,8 +201,13 @@ export async function POST(request: Request) {
   }
 
   let webResearch = "";
+  let maskFileId: string | null = null;
 
   try {
+    if (input.mask) {
+      maskFileId = await uploadMask(client, input.mask);
+    }
+
     if (input.webSearch) {
       const searchResponse = await client.responses.create({
         model,
@@ -160,7 +237,7 @@ export async function POST(request: Request) {
             { type: "input_text", text: imageInstruction },
             {
               type: "input_image",
-              image_url: input.imageDataUrl,
+              file_id: input.imageFileId,
               detail: "auto",
             },
             ...buildReferenceContent(input.userFiles),
@@ -178,8 +255,8 @@ export async function POST(request: Request) {
             "low",
           ),
           size: imageSize,
-          ...(input.maskBase64
-            ? { input_image_mask: { image_url: input.maskBase64 } }
+          ...(maskFileId
+            ? { input_image_mask: { file_id: maskFileId } }
             : {}),
           ...(imageModel === "gpt-image-2" || imageModel.startsWith("gpt-image-2-")
             ? {}
@@ -204,10 +281,16 @@ export async function POST(request: Request) {
       );
     }
 
-    return Response.json({
-      imageBase64: generatedImage,
-      prompt: input.prompt,
-      webSearchUsed: input.webSearch,
+    const uploadedImage = await uploadGeneratedImage(client, generatedImage);
+
+    return new Response(new Uint8Array(uploadedImage.buffer), {
+      status: 200,
+      headers: {
+        "Content-Type": "image/png",
+        "Content-Length": String(uploadedImage.buffer.length),
+        "Cache-Control": "no-store",
+        "X-Image-File-Id": uploadedImage.fileId,
+      },
     });
   } catch (error) {
     const mappedError = mapOpenAIError(error, input.webSearch);
@@ -224,5 +307,11 @@ export async function POST(request: Request) {
       },
       { status: mappedError.status },
     );
+  } finally {
+    if (maskFileId) {
+      void client.files.delete(maskFileId).catch((error) => {
+        console.warn("Failed to delete temporary OpenAI mask file:", error);
+      });
+    }
   }
 }

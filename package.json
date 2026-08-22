@@ -32,6 +32,8 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@radix-ui/react-use-controllable-state": "^1.2.2",
+    "@supabase/ssr": "^0.12.4",
+    "@supabase/supabase-js": "^2.112.2",
     "ai": "^6.0.62",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

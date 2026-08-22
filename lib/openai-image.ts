@@ -21,9 +21,11 @@ export function getGeneratedImage(response: unknown): string | null {
     }
 
     const candidate = item as { type?: unknown; result?: unknown };
-    return candidate.type === "image_generation_call" &&
+    return (
+      candidate.type === "image_generation_call" &&
       typeof candidate.result === "string" &&
-      candidate.result.length > 0;
+      candidate.result.length > 0
+    );
   }) as { result?: string } | undefined;
 
   return imageCall?.result ? `data:image/png;base64,${imageCall.result}` : null;
@@ -35,10 +37,31 @@ export function mapOpenAIError(
 ): OpenAIError {
   const details = error instanceof Error ? error.message : String(error);
   const apiStatus =
-    error && typeof error === "object" && "status" in error &&
+    error &&
+    typeof error === "object" &&
+    "status" in error &&
     typeof error.status === "number"
       ? error.status
       : undefined;
+
+  if (
+    error instanceof Error &&
+    (error.name === "AbortError" || /aborted|cancelled/i.test(details))
+  ) {
+    return {
+      details,
+      message: "Image editing was cancelled.",
+      status: 499,
+    };
+  }
+
+  if (/timeout|timed out/i.test(details) || apiStatus === 408) {
+    return {
+      details,
+      message: "The AI provider timed out. Please try again.",
+      status: 504,
+    };
+  }
 
   if (apiStatus === 429 || /(?:429|quota|rate limit)/i.test(details)) {
     return {
@@ -52,7 +75,7 @@ export function mapOpenAIError(
     return {
       details,
       message: "OpenAI API key is invalid or unauthorized.",
-      status: apiStatus,
+      status: 502,
     };
   }
 
@@ -61,6 +84,6 @@ export function mapOpenAIError(
     message: webSearchEnabled
       ? "OpenAI web search or image editing failed."
       : "OpenAI image editing failed.",
-    status: 500,
+    status: 502,
   };
 }

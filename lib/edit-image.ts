@@ -1,4 +1,4 @@
-import type { FileUIPart } from "ai";
+import type { EditorReferenceFile } from "@/types/editor";
 
 const MAX_REFERENCE_FILES = 5;
 const MAX_REFERENCE_FILE_BYTES = 20 * 1024 * 1024;
@@ -7,7 +7,7 @@ type EditImageOptions = {
   imageRef: string;
   prompt: string;
   webSearch?: boolean;
-  userFiles?: FileUIPart[];
+  userFiles?: EditorReferenceFile[];
   aspectRatio?: string;
   mask?: Blob | null;
   signal?: AbortSignal;
@@ -42,7 +42,7 @@ function safeFilename(filename: string | undefined, index: number): string {
 
 async function appendReferenceFiles(
   formData: FormData,
-  files: FileUIPart[],
+  files: EditorReferenceFile[],
   signal?: AbortSignal,
 ): Promise<void> {
   if (files.length > MAX_REFERENCE_FILES) {

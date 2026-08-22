@@ -28,7 +28,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    assertRequestContentLength(request, MAX_REQUEST_BYTES);
+    assertRequestContentLength(request, MAX_REQUEST_BYTES, true);
     assertRateLimit(request, "upload-image", UPLOADS_PER_MINUTE);
   } catch (error) {
     return getApiErrorResponse(error, "Invalid upload request.");

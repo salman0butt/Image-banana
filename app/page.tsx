@@ -14,9 +14,10 @@ import { uploadImage } from "@/lib/upload-image";
 
 function isAbortError(error: unknown): boolean {
   return (
-    error instanceof DOMException
-      ? error.name === "AbortError"
-      : error instanceof Error && error.name === "AbortError"
+    (typeof DOMException !== "undefined" &&
+      error instanceof DOMException &&
+      error.name === "AbortError") ||
+    (error instanceof Error && error.name === "AbortError")
   );
 }
 
@@ -30,6 +31,7 @@ export default function Home() {
     clearImage,
     attachImageRef,
     setUploading,
+    setErrorMessage,
     showHistory,
     isLoading,
   } = useEditorStore();
@@ -54,6 +56,7 @@ export default function Home() {
     const previewUrl = URL.createObjectURL(file);
     setImage(previewUrl);
     setUploading(true);
+    setErrorMessage(null);
 
     try {
       const imageRef = await uploadImage(file, controller.signal);
@@ -63,8 +66,11 @@ export default function Home() {
       }
     } catch (error) {
       if (!isAbortError(error) && sequence === uploadSequenceRef.current) {
+        const message =
+          error instanceof Error ? error.message : "Image upload failed.";
         console.error("Image upload failed:", error);
         clearImage();
+        setErrorMessage(message);
       }
     } finally {
       if (sequence === uploadSequenceRef.current) {

@@ -4,6 +4,7 @@ import { devtools } from "zustand/middleware";
 import { editImage } from "@/lib/edit-image";
 import { ToolType } from "@/lib/constants";
 
+const MAX_HISTORY_ENTRIES = 20;
 const REMOVE_BACKGROUND_PROMPT =
   "Remove the background completely. Keep the main subject sharp and unchanged, preserve fine details such as hair and edges, and replace the background with transparency.";
 const REFRESH_IMAGE_PROMPT =
@@ -102,25 +103,28 @@ export const useEditorStore = create<EditorState>()(
         const state = get();
         const retainedHistory = state.history.slice(0, state.historyIndex + 1);
         const discardedHistory = state.history.slice(state.historyIndex + 1);
+        const nextHistory = [...retainedHistory, image];
+        const overflow = Math.max(0, nextHistory.length - MAX_HISTORY_ENTRIES);
+        const evictedHistory = nextHistory.slice(0, overflow);
+        const boundedHistory = nextHistory.slice(overflow);
 
-        discardedHistory.forEach(revokeImageUrl);
+        [...discardedHistory, ...evictedHistory].forEach(revokeImageUrl);
 
-        const retainedRefs = Object.fromEntries(
-          Object.entries(state.imageRefsByImage).filter(([url]) =>
-            retainedHistory.includes(url),
-          ),
+        const nextRefs = {
+          ...state.imageRefsByImage,
+          [image]: imageRef,
+        };
+        const boundedRefs = Object.fromEntries(
+          Object.entries(nextRefs).filter(([url]) => boundedHistory.includes(url)),
         );
 
         set({
           image,
           imageRef,
-          imageRefsByImage: {
-            ...retainedRefs,
-            [image]: imageRef,
-          },
+          imageRefsByImage: boundedRefs,
           mask: null,
-          history: [...retainedHistory, image],
-          historyIndex: retainedHistory.length,
+          history: boundedHistory,
+          historyIndex: boundedHistory.length - 1,
           userFiles: [],
           errorMessage: null,
         });

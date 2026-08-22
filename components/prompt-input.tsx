@@ -49,13 +49,17 @@ const PromptInputAttachmentsDisplay = () => {
 };
 
 export const AIPromptInput = () => {
-  const { setPrompt, generateEdit, setUserFiles } = useEditorStore();
+  const { setPrompt, generateEdit, setUserFiles, isUploading } = useEditorStore();
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [status, setStatus] = useState<"submitted" | "ready" | "error">(
     "ready",
   );
 
   const handleSubmit = async (message: PromptInputMessage) => {
+    if (isUploading) {
+      return;
+    }
+
     const hasText = Boolean(message.text);
     const hasAttachments = Boolean(message.files?.length);
 
@@ -66,7 +70,7 @@ export const AIPromptInput = () => {
     setStatus("submitted");
 
     setPrompt(message.text);
-    setUserFiles(message.files)
+    setUserFiles(message.files);
 
     try {
       await generateEdit({ webSearch: webSearchEnabled });
@@ -104,7 +108,7 @@ export const AIPromptInput = () => {
               <span>Search</span>
             </PromptInputButton>
           </PromptInputTools>
-          <PromptInputSubmit status={status} />
+          <PromptInputSubmit status={isUploading ? "submitted" : status} />
         </PromptInputFooter>
       </PromptInput>
     </div>

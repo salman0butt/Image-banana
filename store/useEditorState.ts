@@ -1,8 +1,8 @@
-import type { FileUIPart } from "ai";
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { editImage } from "@/lib/edit-image";
 import { ToolType } from "@/lib/constants";
+import type { EditorReferenceFile } from "@/types/editor";
 
 const MAX_HISTORY_ENTRIES = 20;
 const REMOVE_BACKGROUND_PROMPT =
@@ -13,7 +13,7 @@ const REFRESH_IMAGE_PROMPT =
 type RunEditOptions = {
   prompt: string;
   webSearch?: boolean;
-  userFiles?: FileUIPart[];
+  userFiles?: EditorReferenceFile[];
   aspectRatio?: string;
   mask?: Blob | null;
 };
@@ -30,12 +30,12 @@ type EditorState = {
   isLoading: boolean;
   isUploading: boolean;
   errorMessage: string | null;
-  userFiles: FileUIPart[];
+  userFiles: EditorReferenceFile[];
   selectedTool: ToolType;
   brushSize: number;
   setMask: (mask: Blob | null) => void;
   setBrushSize: (size: number) => void;
-  setUserFiles: (files: FileUIPart[]) => void;
+  setUserFiles: (files: EditorReferenceFile[]) => void;
   setHistoryIndex: (index: number) => void;
   clearHistoryExceptCurrent: () => void;
   undo: () => void;

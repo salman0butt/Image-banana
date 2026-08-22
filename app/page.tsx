@@ -9,45 +9,49 @@ import { AIPromptInput } from "@/components/prompt-input";
 import { RightSidebar } from "@/components/right-sidebar";
 import { useRef } from "react";
 import { useEditorStore } from "@/store/useEditorState";
-import ImageEditor from "@/components/image-editor"
+import ImageEditor from "@/components/image-editor";
+import { uploadImage } from "@/lib/upload-image";
 
 export default function Home() {
-
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const {image, setImage, showHistory, isLoading} = useEditorStore()
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const {
+    image,
+    setImage,
+    attachImageFileId,
+    setUploading,
+    showHistory,
+    isLoading,
+  } = useEditorStore();
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Keep the source and generated mask in the same PNG format and pixel
-    // dimensions, as required by the image edit API.
-    const objectUrl = URL.createObjectURL(file);
-    const uploadedImage = new window.Image();
-
-    uploadedImage.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = uploadedImage.naturalWidth;
-      canvas.height = uploadedImage.naturalHeight;
-
-      const context = canvas.getContext("2d");
-      if (context) {
-        context.drawImage(uploadedImage, 0, 0);
-        setImage(canvas.toDataURL("image/png"));
-      }
-
-      URL.revokeObjectURL(objectUrl);
-    };
-
-    uploadedImage.onerror = () => URL.revokeObjectURL(objectUrl);
-    uploadedImage.src = objectUrl;
+    const previewUrl = URL.createObjectURL(file);
+    setImage(previewUrl);
+    setUploading(true);
     e.target.value = "";
-  }
 
+    try {
+      const fileId = await uploadImage(file);
+      attachImageFileId(previewUrl, fileId);
+    } catch (error) {
+      console.error("Image upload failed:", error);
+    } finally {
+      setUploading(false);
+    }
+  };
 
   return (
     <>
       <div className="w-full h-dvh flex flex-col overflow-hidden">
-        <input ref={fileInputRef} onChange={handleImageUpload} type="file" accept="image/*" className="hidden" />
+        <input
+          ref={fileInputRef}
+          onChange={handleImageUpload}
+          type="file"
+          accept="image/*"
+          className="hidden"
+        />
         <Navbar />
         <div className="flex-1 flex min-h-0 overflow-hidden">
           {/* LEFT COLUMN */}
@@ -109,7 +113,7 @@ export default function Home() {
               </div>
 
               {/* render when image in generating */}
-             {isLoading && <ImageGenerationLoading />} 
+              {isLoading && <ImageGenerationLoading />}
             </div>
 
             {/* PROMPT INPUT AREA */}
@@ -118,9 +122,8 @@ export default function Home() {
             </div>
           </main>
 
-
           {/* RIGHT COLUMNS EDIT HISTORY */}
-          {showHistory && (<RightSidebar />)}
+          {showHistory && <RightSidebar />}
         </div>
       </div>
     </>

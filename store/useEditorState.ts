@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { editImage } from "@/lib/edit-image";
+import { DEFAULT_IMAGE_MODEL_ID } from "@/lib/image-models";
 import { ToolType } from "@/lib/constants";
 import type { EditorReferenceFile } from "@/types/editor";
 
@@ -12,6 +13,7 @@ const REFRESH_IMAGE_PROMPT =
 
 type RunEditOptions = {
   prompt: string;
+  modelId?: string;
   webSearch?: boolean;
   userFiles?: EditorReferenceFile[];
   aspectRatio?: string;
@@ -33,6 +35,8 @@ type EditorState = {
   userFiles: EditorReferenceFile[];
   selectedTool: ToolType;
   brushSize: number;
+  selectedModelId: string;
+  creditBalance: number | null;
   setMask: (mask: Blob | null) => void;
   setBrushSize: (size: number) => void;
   setUserFiles: (files: EditorReferenceFile[]) => void;
@@ -48,6 +52,8 @@ type EditorState = {
   toggleHistory: () => void;
   setLoading: (val: boolean) => void;
   setUploading: (val: boolean) => void;
+  setSelectedModelId: (modelId: string) => void;
+  setCreditBalance: (balance: number | null) => void;
   cancelEdit: () => void;
   generateEdit: (options?: { webSearch?: boolean }) => Promise<void>;
   applyFilter: (prompt: string) => Promise<void>;
@@ -132,6 +138,7 @@ export const useEditorStore = create<EditorState>()(
 
       const runEdit = async ({
         prompt,
+        modelId,
         webSearch = false,
         userFiles = [],
         aspectRatio = "",
@@ -162,6 +169,7 @@ export const useEditorStore = create<EditorState>()(
           const result = await editImage({
             imageRef,
             prompt: normalizedPrompt,
+            modelId: modelId ?? get().selectedModelId,
             webSearch,
             userFiles,
             aspectRatio,
@@ -170,6 +178,9 @@ export const useEditorStore = create<EditorState>()(
           });
 
           if (activeEditController === controller && !controller.signal.aborted) {
+            if (result.creditsRemaining !== null) {
+              set({ creditBalance: result.creditsRemaining });
+            }
             commitImage(result.imageUrl, result.imageRef);
           } else {
             revokeImageUrl(result.imageUrl);
@@ -205,10 +216,14 @@ export const useEditorStore = create<EditorState>()(
         userFiles: [],
         selectedTool: ToolType.MOVE,
         brushSize: 100,
+        selectedModelId: DEFAULT_IMAGE_MODEL_ID,
+        creditBalance: null,
         setMask: (mask) => set({ mask }),
         setBrushSize: (brushSize) => set({ brushSize }),
         setSelectedTool: (selectedTool) => set({ selectedTool }),
         setUserFiles: (userFiles) => set({ userFiles }),
+        setSelectedModelId: (selectedModelId) => set({ selectedModelId }),
+        setCreditBalance: (creditBalance) => set({ creditBalance }),
         setImage: (imageData, imageRef = null) => {
           activeEditController?.abort();
           activeEditController = null;

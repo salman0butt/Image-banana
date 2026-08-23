@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { DEFAULT_IMAGE_MODEL_ID } from "../lib/image-models";
 import { useEditorStore } from "./useEditorState";
 
 const originalFetch = globalThis.fetch;
@@ -17,6 +18,8 @@ function resetStore() {
     isUploading: false,
     errorMessage: null,
     userFiles: [],
+    selectedModelId: DEFAULT_IMAGE_MODEL_ID,
+    creditBalance: null,
   });
 }
 
@@ -106,6 +109,34 @@ test("cancels an active edit request with AbortController", async () => {
   expect(useEditorStore.getState().errorMessage).toBeNull();
   expect(useEditorStore.getState().image).toBe(image);
   expect(useEditorStore.getState().history).toEqual([image]);
+});
+
+test("sends the selected model and tracks the server credit balance", async () => {
+  useEditorStore
+    .getState()
+    .setImage("blob:http://localhost/source", "signed-source-ref");
+  useEditorStore.getState().setPrompt("Make it cinematic");
+  useEditorStore.getState().setSelectedModelId("gpt-image-2-quality");
+
+  globalThis.fetch = async (_input, init) => {
+    const body = init?.body;
+    expect(body).toBeInstanceOf(FormData);
+    expect(body.get("modelId")).toBe("gpt-image-2-quality");
+
+    return new Response(new Uint8Array([137, 80, 78, 71, 1]), {
+      status: 200,
+      headers: {
+        "Content-Type": "image/png",
+        "X-Image-Reference": "generated-ref",
+        "X-Credits-Remaining": "17",
+      },
+    });
+  };
+
+  await useEditorStore.getState().generateEdit();
+
+  expect(useEditorStore.getState().imageRef).toBe("generated-ref");
+  expect(useEditorStore.getState().creditBalance).toBe(17);
 });
 
 test("ignores out-of-range history indexes", () => {

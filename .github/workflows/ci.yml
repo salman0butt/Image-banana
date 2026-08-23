@@ -16,7 +16,7 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - name: Checkout PR branch
         uses: actions/checkout@v4
@@ -76,6 +76,37 @@ jobs:
 
       - name: Browser E2E
         run: pnpm e2e
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.115.0
+
+      - name: Start local Supabase
+        run: |
+          supabase start
+          supabase db reset
+
+      - name: Export local Supabase environment
+        shell: bash
+        run: |
+          supabase status -o env > /tmp/supabase.env
+          set -a
+          source /tmp/supabase.env
+          set +a
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
+            echo "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
+            echo "SIGNUP_CREDITS=25"
+          } >> "$GITHUB_ENV"
+
+      - name: Authenticated billing E2E
+        run: pnpm e2e:auth
+
+      - name: Stop local Supabase
+        if: always()
+        run: supabase stop --no-backup
 
       - name: Production build
         run: pnpm build

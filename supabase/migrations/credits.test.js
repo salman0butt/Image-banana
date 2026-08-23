@@ -53,5 +53,20 @@ test("generation charging is atomic, idempotent, and prevents negative balances"
   expect(migration).toContain("INSUFFICIENT_CREDITS");
   expect(migration).toContain("unique (user_id, idempotency_key)");
   expect(migration).toContain("check (balance >= 0)");
+  expect(migration).toContain("IDEMPOTENCY_KEY_CONFLICT");
   expect(migration).toContain("reason = 'generation_charge'");
+});
+
+test("a generation charge can be refunded at most once", () => {
+  expect(migration).toContain("related_idempotency_key text");
+  expect(migration).toContain(
+    "create unique index if not exists credit_ledger_generation_refund_once_idx",
+  );
+  expect(migration).toContain(
+    "and l.related_idempotency_key = p_charge_idempotency_key",
+  );
+  expect(migration).toContain(
+    "p_refund_idempotency_key,\n    p_charge_idempotency_key",
+  );
+  expect(migration).toContain("REFUND_IDEMPOTENCY_KEY_CONFLICT");
 });

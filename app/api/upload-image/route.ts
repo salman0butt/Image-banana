@@ -5,10 +5,12 @@ import {
   assertRequestContentLength,
   getApiErrorResponse,
 } from "@/lib/api-security";
+import { persistSourceAsset } from "@/lib/generation-history";
 import {
   createImageReference,
   IMAGE_REFERENCE_TTL_SECONDS,
 } from "@/lib/image-reference";
+import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -17,6 +19,13 @@ const MAX_REQUEST_BYTES = MAX_IMAGE_BYTES + 1024 * 1024;
 const MAX_IMAGE_PIXELS = 40_000_000;
 const UPLOADS_PER_MINUTE = 20;
 
+async function getAuthenticatedUserId(): Promise<string | null> {
+  const supabase = await createSupabaseClient();
+  const { data, error } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+  return !error && typeof claims?.sub === "string" ? claims.sub : null;
+}
+
 export async function POST(request: Request) {
   const apiKey = process.env.OPENAI_API_KEY;
 
@@ -24,6 +33,24 @@ export async function POST(request: Request) {
     return Response.json(
       { error: "OPENAI_API_KEY is not configured." },
       { status: 500 },
+    );
+  }
+
+  let userId: string | null = null;
+  try {
+    userId = await getAuthenticatedUserId();
+  } catch (error) {
+    console.error("Unable to verify upload authentication:", error);
+    return Response.json(
+      { error: "Unable to verify authentication." },
+      { status: 500 },
+    );
+  }
+
+  if (!userId) {
+    return Response.json(
+      { error: "Authentication required.", code: "UNAUTHORIZED" },
+      { status: 401 },
     );
   }
 
@@ -102,8 +129,10 @@ export async function POST(request: Request) {
     );
   }
 
+  const client = new OpenAI({ apiKey, timeout: 120_000, maxRetries: 2 });
+  let uploadedFileId: string | null = null;
+
   try {
-    const client = new OpenAI({ apiKey, timeout: 120_000, maxRetries: 2 });
     const uploaded = await client.files.create(
       {
         file: await toFile(pngBuffer, "source.png", { type: "image/png" }),
@@ -115,12 +144,30 @@ export async function POST(request: Request) {
       },
       { signal: request.signal },
     );
+    uploadedFileId = uploaded.id;
+
+    const asset = await persistSourceAsset({
+      userId,
+      buffer: pngBuffer,
+      width,
+      height,
+      openAIFileId: uploaded.id,
+    });
 
     return Response.json({
       imageRef: createImageReference(apiKey, uploaded.id, width, height),
+      assetId: asset.id,
     });
   } catch (error) {
-    console.error("OpenAI image upload failed:", error);
+    if (uploadedFileId) {
+      try {
+        await client.files.delete(uploadedFileId);
+      } catch (cleanupError) {
+        console.warn("Unable to clean up failed source upload:", cleanupError);
+      }
+    }
+
+    console.error("Image upload persistence failed:", error);
     return Response.json(
       {
         error: "Image upload failed.",

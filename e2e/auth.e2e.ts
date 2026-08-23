@@ -12,7 +12,7 @@ test("login page is accessible and sanitizes external next redirects", async ({
   ).toBeVisible();
   await expect(page.getByLabel("Email")).toBeVisible();
   await expect(page.getByLabel("Password")).toBeVisible();
-  await expect(page.locator('input[name="next"]')).toHaveValue("/");
+  await expect(page.locator('input[name="next"]')).toHaveValue("/editor");
   await expect(
     page.getByRole("link", { name: "Create account" }),
   ).toBeVisible();

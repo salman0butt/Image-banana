@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { getSafeAuthErrorMessage } from "@/lib/auth/errors";
 import { getSafeNextPath } from "@/lib/auth/redirect";
 import {
   isSupabaseConfigurationError,
@@ -76,7 +77,14 @@ export async function signIn(formData: FormData) {
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    redirectWithMessage("/auth/login", "error", "Unable to sign in with those credentials.");
+    redirectWithMessage(
+      "/auth/login",
+      "error",
+      getSafeAuthErrorMessage(
+        error,
+        "Unable to sign in with those credentials.",
+      ),
+    );
   }
 
   redirect(next);
@@ -108,7 +116,11 @@ export async function signUp(formData: FormData) {
   });
 
   if (error) {
-    redirectWithMessage("/auth/register", "error", "Unable to create the account.");
+    redirectWithMessage(
+      "/auth/register",
+      "error",
+      getSafeAuthErrorMessage(error, "Unable to create the account."),
+    );
   }
 
   if (data.session) {
@@ -143,7 +155,10 @@ export async function requestPasswordReset(formData: FormData) {
     redirectWithMessage(
       "/auth/forgot-password",
       "error",
-      "Unable to send the reset email right now.",
+      getSafeAuthErrorMessage(
+        error,
+        "Unable to send the reset email right now.",
+      ),
     );
   }
 
@@ -183,7 +198,7 @@ export async function updatePassword(formData: FormData) {
     redirectWithMessage(
       "/auth/update-password",
       "error",
-      "Unable to update your password.",
+      getSafeAuthErrorMessage(error, "Unable to update your password."),
     );
   }
 

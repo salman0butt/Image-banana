@@ -27,6 +27,15 @@ test("credit tables enable RLS and expose only own rows", () => {
   ).toBe(false);
 });
 
+test("browser roles cannot mutate credit tables directly", () => {
+  expect(migration).toContain(
+    "revoke insert, update, delete, truncate on table public.credit_wallets from anon, authenticated",
+  );
+  expect(migration).toContain(
+    "revoke insert, update, delete, truncate on table public.credit_ledger from anon, authenticated",
+  );
+});
+
 test("credit mutation RPCs are restricted to the service role", () => {
   expect(migration).toContain(
     "revoke all on function public.charge_generation_credits(uuid, integer, text, jsonb) from public, anon, authenticated",

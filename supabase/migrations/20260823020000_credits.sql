@@ -23,13 +23,25 @@ create table if not exists public.credit_ledger (
     )
   ),
   idempotency_key text not null check (char_length(idempotency_key) between 1 and 200),
+  related_idempotency_key text check (
+    related_idempotency_key is null
+    or char_length(related_idempotency_key) between 1 and 200
+  ),
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default timezone('utc', now()),
-  unique (user_id, idempotency_key)
+  unique (user_id, idempotency_key),
+  check (
+    (reason = 'generation_refund' and related_idempotency_key is not null)
+    or (reason <> 'generation_refund' and related_idempotency_key is null)
+  )
 );
 
 create index if not exists credit_ledger_user_created_idx
 on public.credit_ledger (user_id, created_at desc);
+
+create unique index if not exists credit_ledger_generation_refund_once_idx
+on public.credit_ledger (user_id, related_idempotency_key)
+where reason = 'generation_refund';
 
 alter table public.credit_wallets enable row level security;
 alter table public.credit_ledger enable row level security;
@@ -78,7 +90,7 @@ begin
     raise exception 'USER_ID_REQUIRED' using errcode = '22023';
   end if;
 
-  if p_signup_credits < 0 or p_signup_credits > 100000 then
+  if p_signup_credits is null or p_signup_credits < 0 or p_signup_credits > 100000 then
     raise exception 'INVALID_SIGNUP_CREDITS' using errcode = '22023';
   end if;
 
@@ -133,12 +145,14 @@ as $$
 declare
   v_balance integer;
   v_existing_balance integer;
+  v_existing_delta integer;
+  v_existing_reason text;
 begin
   if p_user_id is null then
     raise exception 'USER_ID_REQUIRED' using errcode = '22023';
   end if;
 
-  if p_amount <= 0 then
+  if p_amount is null or p_amount <= 0 then
     raise exception 'INVALID_CREDIT_AMOUNT' using errcode = '22023';
   end if;
 
@@ -158,13 +172,17 @@ begin
     raise exception 'CREDIT_WALLET_NOT_FOUND' using errcode = 'P0001';
   end if;
 
-  select l.balance_after
-  into v_existing_balance
+  select l.balance_after, l.delta, l.reason
+  into v_existing_balance, v_existing_delta, v_existing_reason
   from public.credit_ledger as l
   where l.user_id = p_user_id
     and l.idempotency_key = p_idempotency_key;
 
   if found then
+    if v_existing_reason <> 'generation_charge' or v_existing_delta <> -p_amount then
+      raise exception 'IDEMPOTENCY_KEY_CONFLICT' using errcode = 'P0001';
+    end if;
+
     return query select v_existing_balance, false;
     return;
   end if;
@@ -215,17 +233,23 @@ declare
   v_balance integer;
   v_charge_delta integer;
   v_existing_balance integer;
+  v_existing_reason text;
+  v_existing_related_key text;
   v_refund_amount integer;
 begin
   if p_user_id is null then
     raise exception 'USER_ID_REQUIRED' using errcode = '22023';
   end if;
 
-  if p_charge_idempotency_key is null or char_length(p_charge_idempotency_key) < 1 then
+  if p_charge_idempotency_key is null
+    or char_length(p_charge_idempotency_key) < 1
+    or char_length(p_charge_idempotency_key) > 200 then
     raise exception 'INVALID_CHARGE_IDEMPOTENCY_KEY' using errcode = '22023';
   end if;
 
-  if p_refund_idempotency_key is null or char_length(p_refund_idempotency_key) < 1 or char_length(p_refund_idempotency_key) > 200 then
+  if p_refund_idempotency_key is null
+    or char_length(p_refund_idempotency_key) < 1
+    or char_length(p_refund_idempotency_key) > 200 then
     raise exception 'INVALID_REFUND_IDEMPOTENCY_KEY' using errcode = '22023';
   end if;
 
@@ -239,13 +263,34 @@ begin
     raise exception 'CREDIT_WALLET_NOT_FOUND' using errcode = 'P0001';
   end if;
 
+  -- A charge may be compensated at most once, even if a caller accidentally
+  -- retries with a different refund idempotency key.
   select l.balance_after
   into v_existing_balance
+  from public.credit_ledger as l
+  where l.user_id = p_user_id
+    and l.reason = 'generation_refund'
+    and l.related_idempotency_key = p_charge_idempotency_key;
+
+  if found then
+    return query select v_existing_balance, false;
+    return;
+  end if;
+
+  -- A reused refund request key must refer to this same refund operation rather
+  -- than silently aliasing an unrelated ledger entry.
+  select l.balance_after, l.reason, l.related_idempotency_key
+  into v_existing_balance, v_existing_reason, v_existing_related_key
   from public.credit_ledger as l
   where l.user_id = p_user_id
     and l.idempotency_key = p_refund_idempotency_key;
 
   if found then
+    if v_existing_reason <> 'generation_refund'
+      or v_existing_related_key <> p_charge_idempotency_key then
+      raise exception 'REFUND_IDEMPOTENCY_KEY_CONFLICT' using errcode = 'P0001';
+    end if;
+
     return query select v_existing_balance, false;
     return;
   end if;
@@ -274,6 +319,7 @@ begin
     balance_after,
     reason,
     idempotency_key,
+    related_idempotency_key,
     metadata
   )
   values (
@@ -282,6 +328,7 @@ begin
     v_balance,
     'generation_refund',
     p_refund_idempotency_key,
+    p_charge_idempotency_key,
     coalesce(p_metadata, '{}'::jsonb)
   );
 

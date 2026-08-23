@@ -1,5 +1,5 @@
 -- Persistent private image assets and generation history.
--- Images remain private in Supabase Storage and are accessed through server-created signed URLs.
+-- Images remain private in Supabase Storage and are accessed through trusted server code.
 
 insert into storage.buckets (
   id,
@@ -63,10 +63,14 @@ on public.generation_jobs (user_id, created_at desc);
 alter table public.image_assets enable row level security;
 alter table public.generation_jobs enable row level security;
 
+-- Browser roles are read-only. The trusted server client uses the service_role key
+-- and needs explicit table privileges for durable asset/job writes.
 revoke all on table public.image_assets from anon, authenticated;
 revoke all on table public.generation_jobs from anon, authenticated;
 grant select on table public.image_assets to authenticated;
 grant select on table public.generation_jobs to authenticated;
+grant select, insert, update, delete on table public.image_assets to service_role;
+grant select, insert, update, delete on table public.generation_jobs to service_role;
 
 drop trigger if exists image_assets_set_updated_at on public.image_assets;
 create trigger image_assets_set_updated_at

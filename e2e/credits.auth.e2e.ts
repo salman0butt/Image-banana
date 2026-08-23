@@ -348,7 +348,9 @@ test("persistent generation history renders and reopens a saved output", async (
   await assertNoError(error, "Unable to seed generation history");
 
   await page.getByRole("button", { name: "Open generation history" }).click();
-  const historyPanel = page.getByLabel("Generation history");
+  const historyPanel = page.getByRole("complementary", {
+    name: "History sidebar",
+  });
   await expect(historyPanel).toBeVisible();
   await expect(historyPanel.getByText(prompt)).toBeVisible();
   await expect(historyPanel.getByText("gpt-image-2-fast")).toBeVisible();

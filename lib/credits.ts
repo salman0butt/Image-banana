@@ -2,6 +2,15 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 const DEFAULT_SIGNUP_CREDITS = 25;
 const MAX_SIGNUP_CREDITS = 100_000;
+const REFUND_MAX_ATTEMPTS = 3;
+const REFUND_RETRY_BASE_DELAY_MS = 100;
+const NON_RETRYABLE_REFUND_ERROR_MARKERS = [
+  "USER_ID_REQUIRED",
+  "INVALID_",
+  "CREDIT_WALLET_NOT_FOUND",
+  "GENERATION_CHARGE_NOT_FOUND",
+  "REFUND_IDEMPOTENCY_KEY_CONFLICT",
+] as const;
 
 export class InsufficientCreditsError extends Error {
   readonly code = "INSUFFICIENT_CREDITS";
@@ -20,6 +29,8 @@ type CreditRpcRow = {
   applied?: unknown;
   created?: unknown;
 };
+
+type Sleep = (milliseconds: number) => Promise<void>;
 
 function readSignupCredits(): number {
   const raw = process.env.SIGNUP_CREDITS?.trim();
@@ -52,6 +63,45 @@ function readBalance(row: CreditRpcRow, operation: string): number {
   }
 
   return Number(balance);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function isRetryableCreditRefundError(error: unknown): boolean {
+  const message = errorMessage(error);
+  return !NON_RETRYABLE_REFUND_ERROR_MARKERS.some((marker) =>
+    message.includes(marker),
+  );
+}
+
+const sleep: Sleep = (milliseconds) =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+export async function withCreditRefundRetry<T>(
+  operation: () => Promise<T>,
+  wait: Sleep = sleep,
+): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= REFUND_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+
+      if (!isRetryableCreditRefundError(error) || attempt === REFUND_MAX_ATTEMPTS) {
+        throw error;
+      }
+
+      await wait(REFUND_RETRY_BASE_DELAY_MS * attempt);
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Unable to refund generation credits.");
 }
 
 export async function ensureCreditWallet(userId: string): Promise<number> {
@@ -120,20 +170,23 @@ export async function refundGenerationCredits({
   metadata: Record<string, unknown>;
 }): Promise<{ balance: number; applied: boolean }> {
   const admin = createAdminClient();
-  const { data, error } = await admin.rpc("refund_generation_credits", {
-    p_user_id: userId,
-    p_charge_idempotency_key: chargeIdempotencyKey,
-    p_refund_idempotency_key: refundIdempotencyKey,
-    p_metadata: metadata,
+
+  return withCreditRefundRetry(async () => {
+    const { data, error } = await admin.rpc("refund_generation_credits", {
+      p_user_id: userId,
+      p_charge_idempotency_key: chargeIdempotencyKey,
+      p_refund_idempotency_key: refundIdempotencyKey,
+      p_metadata: metadata,
+    });
+
+    if (error) {
+      throw new Error(`Unable to refund generation credits: ${error.message}`);
+    }
+
+    const row = readRpcRow(data, "generation refund");
+    return {
+      balance: readBalance(row, "generation refund"),
+      applied: row.applied === true,
+    };
   });
-
-  if (error) {
-    throw new Error(`Unable to refund generation credits: ${error.message}`);
-  }
-
-  const row = readRpcRow(data, "generation refund");
-  return {
-    balance: readBalance(row, "generation refund"),
-    applied: row.applied === true,
-  };
 }

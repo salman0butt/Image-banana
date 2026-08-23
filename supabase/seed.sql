@@ -1,0 +1,3 @@
+-- PR: Supabase Foundation
+-- No persistent demo credentials are seeded. Development users should be created
+-- through Supabase Auth so auth.users and the profile provisioning trigger stay in sync.

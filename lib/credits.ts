@@ -1,5 +1,3 @@
-import "server-only";
-
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const DEFAULT_SIGNUP_CREDITS = 25;

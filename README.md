@@ -77,7 +77,7 @@ pnpm test
 pnpm build
 ```
 
-The production dependency audit is the security gate because production runtime dependencies are what ship with the application. A full `pnpm audit --audit-level=high` may additionally report inherited vulnerabilities in development-only lint/tooling dependencies; review those findings separately and update the toolchain when compatible upstream releases are available rather than weakening the production audit gate.
+The production dependency audit is the security gate because production runtime dependencies are what ship with the application. CI also runs the full `pnpm audit --audit-level=high`; both audits must pass. If future advisories appear in direct or transitive dependencies, remediate them with a compatible package update or an exact pnpm override rather than weakening either audit gate.
 
 ## Security and resource controls
 

@@ -1,12 +1,8 @@
-import { IMAGE_ASSET_BUCKET } from "@/lib/assets";
+import { IMAGE_ASSET_BUCKET } from "@/lib/storage-constants";
 import { createClient } from "@/lib/supabase/client";
 
 type ApiError = {
-  error?:
-    | string
-    | {
-        message?: unknown;
-      };
+  error?: string | { message?: unknown };
 };
 
 type UploadIntentResponse = {
@@ -29,20 +25,13 @@ export type UploadedImage = {
 
 function readApiError(data: ApiError, fallback: string): string {
   if (typeof data.error === "string") return data.error;
-  if (
-    data.error &&
-    typeof data.error === "object" &&
-    typeof data.error.message === "string"
-  ) {
+  if (data.error && typeof data.error === "object" && typeof data.error.message === "string") {
     return data.error.message;
   }
   return fallback;
 }
 
-async function createUploadIntent(
-  file: File,
-  signal?: AbortSignal,
-): Promise<{ assetId: string; path: string; token: string }> {
+async function createUploadIntent(file: File, signal?: AbortSignal) {
   const response = await fetch("/api/assets/upload-intent", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -70,17 +59,10 @@ async function createUploadIntent(
     throw new Error("The upload API returned an invalid signed upload intent.");
   }
 
-  return {
-    assetId: data.assetId,
-    path: data.path,
-    token: data.token,
-  };
+  return { assetId: data.assetId, path: data.path, token: data.token };
 }
 
-async function finalizeUpload(
-  assetId: string,
-  signal?: AbortSignal,
-): Promise<UploadedImage> {
+async function finalizeUpload(assetId: string, signal?: AbortSignal): Promise<UploadedImage> {
   const response = await fetch("/api/assets/finalize", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -104,22 +86,13 @@ async function finalizeUpload(
     throw new Error("The finalize API returned an invalid image asset.");
   }
 
-  return {
-    assetId: data.assetId,
-    imageRef: data.imageRef,
-    imageUrl: data.imageUrl,
-  };
+  return { assetId: data.assetId, imageRef: data.imageRef, imageUrl: data.imageUrl };
 }
 
-export async function uploadImage(
-  file: File,
-  signal?: AbortSignal,
-): Promise<UploadedImage> {
+export async function uploadImage(file: File, signal?: AbortSignal): Promise<UploadedImage> {
   const intent = await createUploadIntent(file, signal);
 
-  if (signal?.aborted) {
-    throw new DOMException("Aborted", "AbortError");
-  }
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
   const supabase = createClient();
   const { error } = await supabase.storage
@@ -129,13 +102,8 @@ export async function uploadImage(
       cacheControl: "0",
     });
 
-  if (error) {
-    throw new Error(`Image upload failed: ${error.message}`);
-  }
-
-  if (signal?.aborted) {
-    throw new DOMException("Aborted", "AbortError");
-  }
+  if (error) throw new Error(`Image upload failed: ${error.message}`);
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
   return finalizeUpload(intent.assetId, signal);
 }

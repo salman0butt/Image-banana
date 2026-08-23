@@ -66,6 +66,48 @@ test("resets loading and exposes an error after an edit request fails", async ()
   expect(useEditorStore.getState().errorMessage).toBe("Editing failed.");
 });
 
+test("cancels an active edit request with AbortController", async () => {
+  const image = "blob:http://localhost/source";
+  useEditorStore.getState().setImage(image, "signed-source-ref");
+  useEditorStore.getState().setPrompt("Make it blue");
+
+  let requestSignal;
+  let markRequestStarted;
+  const requestStarted = new Promise((resolve) => {
+    markRequestStarted = resolve;
+  });
+
+  globalThis.fetch = (_input, init) =>
+    new Promise((_resolve, reject) => {
+      requestSignal = init?.signal;
+      markRequestStarted();
+      requestSignal?.addEventListener(
+        "abort",
+        () => {
+          const abortError = new Error("Aborted");
+          abortError.name = "AbortError";
+          reject(abortError);
+        },
+        { once: true },
+      );
+    });
+
+  const generation = useEditorStore.getState().generateEdit();
+  await requestStarted;
+
+  expect(requestSignal).toBeDefined();
+  expect(useEditorStore.getState().isLoading).toBe(true);
+
+  useEditorStore.getState().cancelEdit();
+
+  expect(requestSignal.aborted).toBe(true);
+  expect(useEditorStore.getState().isLoading).toBe(false);
+  await expect(generation).rejects.toThrow("Image edit cancelled.");
+  expect(useEditorStore.getState().errorMessage).toBeNull();
+  expect(useEditorStore.getState().image).toBe(image);
+  expect(useEditorStore.getState().history).toEqual([image]);
+});
+
 test("ignores out-of-range history indexes", () => {
   useEditorStore.getState().setImage("blob:http://localhost/source", "source-ref");
   useEditorStore.getState().setHistoryIndex(99);

@@ -1,6 +1,7 @@
 "use client";
 
-import { GlobeIcon, Loader2, Paperclip, Send, X } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { GlobeIcon, Loader2, Paperclip, Send, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,6 +23,10 @@ function isAcceptedReference(file: File): boolean {
   return file.type.startsWith("image/") || file.type === "application/pdf";
 }
 
+function isCancelledEdit(error: unknown): boolean {
+  return error instanceof Error && error.message === "Image edit cancelled.";
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) {
     return `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -38,6 +43,7 @@ export const AIPromptInput = () => {
   const {
     setPrompt,
     generateEdit,
+    cancelEdit,
     setUserFiles,
     setErrorMessage,
     errorMessage,
@@ -45,6 +51,13 @@ export const AIPromptInput = () => {
     isUploading,
     isLoading,
   } = useEditorStore();
+  const editMutation = useMutation({
+    mutationKey: ["image-edit"],
+    mutationFn: ({ webSearch }: { webSearch: boolean }) =>
+      generateEdit({ webSearch }),
+    retry: false,
+  });
+  const isGenerating = isLoading || editMutation.isPending;
 
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -119,7 +132,7 @@ export const AIPromptInput = () => {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (isUploading || isLoading) return;
+    if (isUploading || isGenerating) return;
 
     const prompt = text.trim();
     if (!image) {
@@ -138,21 +151,24 @@ export const AIPromptInput = () => {
       mediaType: attachment.mediaType,
       filename: attachment.filename,
     }));
+    const submittedText = text;
 
     setPrompt(prompt);
     setUserFiles(userFiles);
     setErrorMessage(null);
 
     try {
-      await generateEdit({ webSearch: webSearchEnabled });
-      setText("");
+      await editMutation.mutateAsync({ webSearch: webSearchEnabled });
+      setText((current) => (current === submittedText ? "" : current));
       setPrompt("");
       clearAttachments();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Image edit failed.";
-      if (!/cancelled/i.test(message)) {
-        console.error("Image edit failed:", error);
+      if (isCancelledEdit(error)) {
+        editMutation.reset();
+        return;
       }
+
+      console.error("Image edit failed:", error);
     }
   };
 
@@ -212,7 +228,9 @@ export const AIPromptInput = () => {
               type="button"
               variant="ghost"
               size="sm"
-              disabled={isUploading || isLoading || attachments.length >= MAX_REFERENCE_FILES}
+              disabled={
+                isUploading || isGenerating || attachments.length >= MAX_REFERENCE_FILES
+              }
               onClick={() => fileInputRef.current?.click()}
               className="text-zinc-400 hover:text-zinc-100"
             >
@@ -224,7 +242,7 @@ export const AIPromptInput = () => {
               variant="ghost"
               size="sm"
               aria-pressed={webSearchEnabled}
-              disabled={isUploading || isLoading}
+              disabled={isUploading || isGenerating}
               onClick={() => setWebSearchEnabled((enabled) => !enabled)}
               className={
                 webSearchEnabled
@@ -237,19 +255,33 @@ export const AIPromptInput = () => {
             </Button>
           </div>
 
-          <Button
-            type="submit"
-            size="sm"
-            disabled={!image || isUploading || isLoading || !text.trim()}
-            className="bg-yellow-500 font-semibold text-zinc-950 hover:bg-yellow-400"
-          >
-            {isUploading || isLoading ? (
+          {isUploading ? (
+            <Button type="button" size="sm" disabled>
               <Loader2 size={15} className="mr-1.5 animate-spin" aria-hidden="true" />
-            ) : (
+              Uploading
+            </Button>
+          ) : isGenerating ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={cancelEdit}
+              className="border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20 hover:text-red-200"
+            >
+              <Square size={14} className="mr-1.5 fill-current" aria-hidden="true" />
+              Cancel
+            </Button>
+          ) : (
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!image || !text.trim()}
+              className="bg-yellow-500 font-semibold text-zinc-950 hover:bg-yellow-400"
+            >
               <Send size={15} className="mr-1.5" aria-hidden="true" />
-            )}
-            {isUploading ? "Uploading" : isLoading ? "Generating" : "Generate"}
-          </Button>
+              Generate
+            </Button>
+          )}
         </div>
       </form>
 

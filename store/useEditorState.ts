@@ -324,8 +324,12 @@ export const useEditorStore = create<EditorState>()(
         setLoading: (isLoading) => set({ isLoading }),
         setUploading: (isUploading) => set({ isUploading }),
         cancelEdit: () => {
-          activeEditController?.abort();
-          set({ errorMessage: null });
+          const controller = activeEditController;
+          if (!controller) return;
+
+          activeEditController = null;
+          controller.abort();
+          set({ isLoading: false, errorMessage: null });
         },
         generateEdit: async ({ webSearch = false } = {}) => {
           const { prompt, userFiles, mask } = get();

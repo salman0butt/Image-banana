@@ -54,13 +54,17 @@ export default async function AccountPage({
     console.error("Unable to provision account credit wallet:", error);
   }
 
-  const { data: ledgerData } = await supabase
+  const { data: ledgerData, error: ledgerError } = await supabase
     .from("credit_ledger")
     .select("id, delta, balance_after, reason, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(10);
-  const ledger = (ledgerData ?? []) as LedgerEntry[];
+  const ledger = ledgerError ? null : ((ledgerData ?? []) as LedgerEntry[]);
+
+  if (ledgerError) {
+    console.error("Unable to load account credit activity:", ledgerError);
+  }
 
   const message = typeof params.message === "string" ? params.message : undefined;
   const email = typeof claims?.email === "string" ? claims.email : "";
@@ -127,7 +131,11 @@ export default async function AccountPage({
           </div>
 
           <div className="overflow-hidden rounded-xl border border-border">
-            {ledger.length ? (
+            {ledger === null ? (
+              <p className="px-4 py-6 text-sm text-muted-foreground" role="status">
+                Credit activity is temporarily unavailable.
+              </p>
+            ) : ledger.length ? (
               <ul className="divide-y divide-border">
                 {ledger.map((entry) => (
                   <li

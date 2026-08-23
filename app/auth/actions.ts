@@ -4,6 +4,10 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { getSafeNextPath } from "@/lib/auth/redirect";
+import {
+  isSupabaseConfigurationError,
+  SUPABASE_CONFIGURATION_MESSAGE,
+} from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
 
 function stringField(formData: FormData, name: string) {
@@ -18,6 +22,22 @@ function redirectWithMessage(
 ): never {
   const params = new URLSearchParams({ [key]: message });
   redirect(`${path}?${params.toString()}`);
+}
+
+async function createAuthClient(errorPath: string) {
+  try {
+    return await createClient();
+  } catch (error) {
+    if (isSupabaseConfigurationError(error)) {
+      redirectWithMessage(
+        errorPath,
+        "error",
+        SUPABASE_CONFIGURATION_MESSAGE,
+      );
+    }
+
+    throw error;
+  }
 }
 
 async function getSiteUrl() {
@@ -52,7 +72,7 @@ export async function signIn(formData: FormData) {
     redirectWithMessage("/auth/login", "error", "Email and password are required.");
   }
 
-  const supabase = await createClient();
+  const supabase = await createAuthClient("/auth/login");
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
@@ -77,7 +97,7 @@ export async function signUp(formData: FormData) {
   }
 
   const siteUrl = await getSiteUrl();
-  const supabase = await createClient();
+  const supabase = await createAuthClient("/auth/register");
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -114,7 +134,7 @@ export async function requestPasswordReset(formData: FormData) {
   }
 
   const siteUrl = await getSiteUrl();
-  const supabase = await createClient();
+  const supabase = await createAuthClient("/auth/forgot-password");
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: `${siteUrl}/auth/confirm?next=${encodeURIComponent("/auth/update-password")}`,
   });
@@ -146,7 +166,7 @@ export async function updatePassword(formData: FormData) {
     );
   }
 
-  const supabase = await createClient();
+  const supabase = await createAuthClient("/auth/update-password");
   const { data, error: claimsError } = await supabase.auth.getClaims();
   const claims = data?.claims;
 
@@ -171,7 +191,7 @@ export async function updatePassword(formData: FormData) {
 }
 
 export async function signOut() {
-  const supabase = await createClient();
+  const supabase = await createAuthClient("/auth/login");
   await supabase.auth.signOut();
   redirect("/auth/login");
 }

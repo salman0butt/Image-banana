@@ -261,7 +261,7 @@ test("authenticated editor cancellation aborts the active browser request", asyn
   await page.getByRole("button", { name: "Generate · 2" }).click();
   await requestStarted;
 
-  const cancelButton = page.getByRole("button", { name: "Cancel" });
+  const cancelButton = page.locator("form").getByRole("button", { name: "Cancel" });
   await expect(cancelButton).toBeVisible();
   await cancelButton.click();
   releaseRequest();

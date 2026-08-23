@@ -1,5 +1,4 @@
 import { afterEach, expect, test } from "bun:test";
-import { createImageReference } from "../../../lib/image-reference";
 import { POST } from "./route";
 
 const originalApiKey = process.env.OPENAI_API_KEY;
@@ -13,14 +12,10 @@ afterEach(() => {
 });
 
 test("returns 400 for a malformed mask before calling OpenAI", async () => {
-  const apiKey = "test-openai-api-key";
-  process.env.OPENAI_API_KEY = apiKey;
+  process.env.OPENAI_API_KEY = "test-openai-api-key";
 
   const formData = new FormData();
-  formData.set(
-    "imageRef",
-    createImageReference(apiKey, "file_test_source", 32, 32),
-  );
+  formData.set("sourceAssetId", "11111111-1111-4111-8111-111111111111");
   formData.set("prompt", "Change the selected area");
   formData.set(
     "mask",

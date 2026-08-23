@@ -1,9 +1,32 @@
 import { NextResponse } from "next/server";
 
+import {
+  isSupabaseConfigurationError,
+  SUPABASE_CONFIGURATION_MESSAGE,
+} from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
 
 export async function GET() {
-  const supabase = await createClient();
+  let supabase;
+
+  try {
+    supabase = await createClient();
+  } catch (error) {
+    if (isSupabaseConfigurationError(error)) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "SUPABASE_NOT_CONFIGURED",
+            message: SUPABASE_CONFIGURATION_MESSAGE,
+          },
+        },
+        { status: 503 },
+      );
+    }
+
+    throw error;
+  }
+
   const { data, error: claimsError } = await supabase.auth.getClaims();
   const claims = data?.claims;
   const userId = !claimsError && typeof claims?.sub === "string" ? claims.sub : null;
@@ -23,7 +46,12 @@ export async function GET() {
 
   if (error) {
     return NextResponse.json(
-      { error: { code: "PROFILE_READ_FAILED", message: "Unable to load the profile." } },
+      {
+        error: {
+          code: "PROFILE_READ_FAILED",
+          message: "Unable to load the profile.",
+        },
+      },
       { status: 500 },
     );
   }

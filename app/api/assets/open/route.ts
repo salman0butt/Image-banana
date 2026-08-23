@@ -1,7 +1,12 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
-import { openEditableAsset } from "@/lib/generation-history";
+import {
+  getUserAsset,
+  IMAGE_ASSET_BUCKET,
+  openEditableAsset,
+} from "@/lib/generation-history";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 const UUID_PATTERN =
@@ -40,6 +45,14 @@ export async function GET(request: Request) {
   }
 
   try {
+    const asset = await getUserAsset(userId, assetId);
+    if (!asset) {
+      return NextResponse.json(
+        { error: { code: "ASSET_NOT_FOUND", message: "The image asset is unavailable." } },
+        { status: 404 },
+      );
+    }
+
     const client = new OpenAI({ apiKey, timeout: 120_000, maxRetries: 2 });
     const editable = await openEditableAsset({
       userId,
@@ -48,19 +61,44 @@ export async function GET(request: Request) {
       apiKey,
       signal: request.signal,
     });
-    return NextResponse.json(editable);
+
+    const admin = createAdminClient();
+    const { data: stored, error: downloadError } = await admin.storage
+      .from(IMAGE_ASSET_BUCKET)
+      .download(asset.storage_path);
+
+    if (downloadError || !stored) {
+      throw new Error(
+        `Unable to read stored image: ${downloadError?.message ?? "unknown error"}`,
+      );
+    }
+
+    const buffer = Buffer.from(await stored.arrayBuffer());
+    if (!buffer.length) {
+      throw new Error("The stored image is empty.");
+    }
+
+    return new Response(new Uint8Array(buffer), {
+      status: 200,
+      headers: {
+        "Content-Type": "image/png",
+        "Content-Length": String(buffer.length),
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+        "X-Image-Reference": editable.imageRef,
+        "X-Image-Asset-Id": editable.assetId,
+      },
+    });
   } catch (error) {
     console.error("Unable to open image asset:", error);
-    const message = error instanceof Error ? error.message : "Unable to open image.";
-    const missing = message.includes("not found");
     return NextResponse.json(
       {
         error: {
-          code: missing ? "ASSET_NOT_FOUND" : "ASSET_OPEN_FAILED",
-          message: missing ? "The image asset is unavailable." : "Unable to open the stored image.",
+          code: "ASSET_OPEN_FAILED",
+          message: "Unable to open the stored image.",
         },
       },
-      { status: missing ? 404 : 500 },
+      { status: 500 },
     );
   }
 }

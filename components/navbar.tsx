@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
-import { Download, History, Redo, Undo, Upload, X } from "lucide-react";
+import { CircleUserRound, Download, History, Redo, Undo, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/store/useEditorState";
 
@@ -138,6 +138,17 @@ export function Navbar() {
             )}
           </Button>
         </div>
+
+        <Button
+          asChild
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+        >
+          <Link href="/account" aria-label="Open account" title="Account">
+            <CircleUserRound size={18} aria-hidden="true" />
+          </Link>
+        </Button>
       </div>
     </header>
   );

@@ -13,11 +13,50 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+function metadataBase(): URL {
+  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+
+  if (configured) {
+    try {
+      return new URL(configured);
+    } catch {
+      // Fall back to the local development URL below.
+    }
+  }
+
+  return new URL("http://localhost:3000");
+}
+
+const description =
+  "Upload an image, describe the changes you want, and edit with AI using precision masks, reference files, model presets, and transparent generation credits.";
+
 export const metadata: Metadata = {
-  title: "Image's Banana — AI Image Editor",
-  description: "Edit images with AI, masks, filters, background removal, and expansion tools.",
-  keywords: ["AI image editor", "image editing", "generative AI"],
+  metadataBase: metadataBase(),
+  title: "Image's Banana – AI Image Editor",
+  description,
+  keywords: ["AI image editor", "image editing", "generative AI", "AI photo editor"],
   creator: "Image's Banana",
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    type: "website",
+    url: "/",
+    siteName: "Image's Banana",
+    title: "Image's Banana – AI Image Editor",
+    description,
+    images: ["/og.jpg"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Image's Banana – AI Image Editor",
+    description,
+    images: ["/og.jpg"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
   icons: {
     icon: "/favicon.ico",
     shortcut: "/favicon-16x16.png",

@@ -32,7 +32,7 @@ type CreditRpcRow = {
 
 type Sleep = (milliseconds: number) => Promise<void>;
 
-function readSignupCredits(): number {
+export function getConfiguredSignupCredits(): number {
   const raw = process.env.SIGNUP_CREDITS?.trim();
   if (!raw) return DEFAULT_SIGNUP_CREDITS;
 
@@ -108,7 +108,7 @@ export async function ensureCreditWallet(userId: string): Promise<number> {
   const admin = createAdminClient();
   const { data, error } = await admin.rpc("ensure_credit_wallet", {
     p_user_id: userId,
-    p_signup_credits: readSignupCredits(),
+    p_signup_credits: getConfiguredSignupCredits(),
   });
 
   if (error) {

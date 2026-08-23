@@ -19,13 +19,13 @@ export default async function RegisterPage({
   searchParams: SearchParams;
 }) {
   const params = await searchParams;
-  const next = getSafeNextPath(single(params.next), "/");
+  const next = getSafeNextPath(single(params.next), "/editor");
   const error = single(params.error);
 
   return (
     <AuthPageShell
       title="Create your account"
-      description="Use email and password now. The auth layer is structured so OAuth providers can be added later without replacing Supabase Auth."
+      description="Create an account to receive your configured signup credits and start editing with AI."
     >
       <form action={signUp} className="space-y-4">
         <input type="hidden" name="next" value={next} />
@@ -48,7 +48,7 @@ export default async function RegisterPage({
       </form>
       <p className="mt-6 text-sm text-muted-foreground">
         Already have an account?{" "}
-        <Link className="text-foreground hover:underline" href="/auth/login">Sign in</Link>
+        <Link className="text-foreground hover:underline" href="/auth/login?next=%2Feditor">Sign in</Link>
       </p>
     </AuthPageShell>
   );

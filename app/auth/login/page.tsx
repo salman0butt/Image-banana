@@ -19,14 +19,14 @@ export default async function LoginPage({
   searchParams: SearchParams;
 }) {
   const params = await searchParams;
-  const next = getSafeNextPath(single(params.next), "/");
+  const next = getSafeNextPath(single(params.next), "/editor");
   const error = single(params.error);
   const message = single(params.message);
 
   return (
     <AuthPageShell
       title="Welcome back"
-      description="Sign in to continue editing and keep your future SaaS assets tied to your account."
+      description="Sign in to open your Image's Banana editor and continue creating."
     >
       <form action={signIn} className="space-y-4">
         <input type="hidden" name="next" value={next} />
@@ -47,7 +47,7 @@ export default async function LoginPage({
         <Button type="submit" className="w-full">Sign in</Button>
       </form>
       <div className="mt-6 flex items-center justify-between gap-4 text-sm text-muted-foreground">
-        <Link className="hover:text-foreground hover:underline" href="/auth/register">Create account</Link>
+        <Link className="hover:text-foreground hover:underline" href="/auth/register?next=%2Feditor">Create account</Link>
         <Link className="hover:text-foreground hover:underline" href="/auth/forgot-password">Forgot password?</Link>
       </div>
     </AuthPageShell>

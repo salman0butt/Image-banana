@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { signOut } from "@/app/auth/actions";
@@ -174,11 +175,16 @@ export default async function AccountPage({
           </div>
         </div>
 
-        <form action={signOut}>
-          <Button type="submit" variant="outline">
-            Sign out
+        <div className="flex flex-wrap gap-3">
+          <Button asChild>
+            <Link href="/editor">Open editor</Link>
           </Button>
-        </form>
+          <form action={signOut}>
+            <Button type="submit" variant="outline">
+              Sign out
+            </Button>
+          </form>
+        </div>
       </section>
     </main>
   );

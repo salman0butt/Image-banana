@@ -67,7 +67,7 @@ async function getSiteUrl() {
 export async function signIn(formData: FormData) {
   const email = stringField(formData, "email");
   const password = stringField(formData, "password");
-  const next = getSafeNextPath(stringField(formData, "next"), "/");
+  const next = getSafeNextPath(stringField(formData, "next"), "/editor");
 
   if (!email || !password) {
     redirectWithMessage("/auth/login", "error", "Email and password are required.");
@@ -94,7 +94,7 @@ export async function signUp(formData: FormData) {
   const displayName = stringField(formData, "displayName");
   const email = stringField(formData, "email");
   const password = stringField(formData, "password");
-  const next = getSafeNextPath(stringField(formData, "next"), "/");
+  const next = getSafeNextPath(stringField(formData, "next"), "/editor");
 
   if (!email || password.length < 8) {
     redirectWithMessage(

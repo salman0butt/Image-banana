@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import OpenAI, { toFile } from "openai";
 import type { ResponseInputContent } from "openai/resources/responses/responses";
 import sharp from "sharp";
@@ -8,18 +10,26 @@ import {
   getApiErrorResponse,
 } from "@/lib/api-security";
 import {
+  chargeGenerationCredits,
+  InsufficientCreditsError,
+  refundGenerationCredits,
+} from "@/lib/credits";
+import {
+  DEFAULT_IMAGE_MODEL_ID,
+  getImageModelPreset,
+} from "@/lib/image-models";
+import {
   createImageReference,
   IMAGE_REFERENCE_TTL_SECONDS,
   parseImageReference,
 } from "@/lib/image-reference";
 import { normalizeAspectRatio, resolveImageSize } from "@/lib/image-size";
 import { getGeneratedImage, mapOpenAIError } from "@/lib/openai-image";
+import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
-const IMAGE_QUALITIES = ["low", "medium", "high", "auto"] as const;
 const IMAGE_SIZES = ["1024x1024", "1536x1024", "1024x1536", "auto"] as const;
-const INPUT_FIDELITIES = ["low", "high"] as const;
 const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
 const MAX_PROMPT_LENGTH = 8_000;
 const MAX_MASK_BYTES = 20 * 1024 * 1024;
@@ -38,19 +48,60 @@ function envOption<const T extends readonly string[]>(
   return options.includes(value ?? "") ? (value as T[number]) : fallback;
 }
 
+type ValidatedMask = {
+  buffer: Buffer;
+  width: number;
+  height: number;
+};
+
 type EditImageRequest = {
   imageRef: string;
-  mask: File | null;
+  mask: ValidatedMask | null;
   prompt: string;
   webSearch: boolean;
   referenceFiles: File[];
   aspectRatio: string;
+  modelId: string;
 };
 
 type UploadedReferences = {
   content: ResponseInputContent[];
   fileIds: string[];
 };
+
+async function readValidatedMask(mask: File): Promise<ValidatedMask> {
+  const buffer = Buffer.from(await mask.arrayBuffer());
+  let metadata: Awaited<ReturnType<ReturnType<typeof sharp>["metadata"]>>;
+
+  try {
+    metadata = await sharp(buffer, {
+      limitInputPixels: MAX_IMAGE_PIXELS,
+    }).metadata();
+  } catch {
+    throw new ApiRequestError(
+      "The mask must be a valid PNG image with an alpha channel.",
+      400,
+    );
+  }
+
+  if (
+    metadata.format !== "png" ||
+    !metadata.width ||
+    !metadata.height ||
+    metadata.hasAlpha !== true
+  ) {
+    throw new ApiRequestError(
+      "The mask must be a valid PNG image with an alpha channel.",
+      400,
+    );
+  }
+
+  return {
+    buffer,
+    width: metadata.width,
+    height: metadata.height,
+  };
+}
 
 export async function readEditImageRequest(
   request: Request,
@@ -69,6 +120,7 @@ export async function readEditImageRequest(
   const imageRefValue = formData.get("imageRef");
   const promptValue = formData.get("prompt");
   const maskValue = formData.get("mask");
+  const modelIdValue = formData.get("modelId");
   const prompt = typeof promptValue === "string" ? promptValue.trim() : "";
 
   if (typeof imageRefValue !== "string" || !imageRefValue.trim()) {
@@ -86,7 +138,7 @@ export async function readEditImageRequest(
     );
   }
 
-  let mask: File | null = null;
+  let mask: ValidatedMask | null = null;
   if (maskValue && typeof maskValue !== "string") {
     if (!maskValue.size) {
       throw new ApiRequestError("The mask is empty.", 400);
@@ -96,7 +148,7 @@ export async function readEditImageRequest(
       throw new ApiRequestError("The mask must be smaller than 20 MB.", 413);
     }
 
-    mask = maskValue;
+    mask = await readValidatedMask(maskValue);
   }
 
   const referenceValues = formData.getAll("referenceFile");
@@ -122,6 +174,11 @@ export async function readEditImageRequest(
     return value;
   });
 
+  const requestedModelId =
+    typeof modelIdValue === "string" && modelIdValue.trim()
+      ? modelIdValue.trim()
+      : DEFAULT_IMAGE_MODEL_ID;
+
   return {
     imageRef: imageRefValue.trim(),
     mask,
@@ -129,43 +186,18 @@ export async function readEditImageRequest(
     webSearch: formData.get("webSearch") === "true",
     referenceFiles,
     aspectRatio: normalizeAspectRatio(formData.get("aspectRatio")),
+    modelId: requestedModelId,
   };
 }
 
 async function uploadMask(
   client: OpenAI,
-  mask: File,
+  mask: ValidatedMask,
   width: number,
   height: number,
   signal: AbortSignal,
 ): Promise<string> {
-  const buffer = Buffer.from(await mask.arrayBuffer());
-  const metadata = await (async () => {
-    try {
-      return await sharp(buffer, {
-        limitInputPixels: MAX_IMAGE_PIXELS,
-      }).metadata();
-    } catch {
-      throw new ApiRequestError(
-        "The mask must be a valid PNG image with an alpha channel.",
-        400,
-      );
-    }
-  })();
-
-  if (
-    metadata.format !== "png" ||
-    !metadata.width ||
-    !metadata.height ||
-    metadata.hasAlpha !== true
-  ) {
-    throw new ApiRequestError(
-      "The mask must be a valid PNG image with an alpha channel.",
-      400,
-    );
-  }
-
-  if (metadata.width !== width || metadata.height !== height) {
+  if (mask.width !== width || mask.height !== height) {
     throw new ApiRequestError(
       "The mask and source image must have the same dimensions.",
       400,
@@ -174,7 +206,7 @@ async function uploadMask(
 
   const uploaded = await client.files.create(
     {
-      file: await toFile(buffer, "mask.png", { type: "image/png" }),
+      file: await toFile(mask.buffer, "mask.png", { type: "image/png" }),
       purpose: "user_data",
       expires_after: {
         anchor: "created_at",
@@ -331,6 +363,14 @@ async function cleanupTemporaryFiles(client: OpenAI, fileIds: string[]) {
   });
 }
 
+async function getAuthenticatedUserId(): Promise<string | null> {
+  const supabase = await createSupabaseClient();
+  const { data, error } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+
+  return !error && typeof claims?.sub === "string" ? claims.sub : null;
+}
+
 export async function POST(request: Request) {
   let input: EditImageRequest;
 
@@ -340,12 +380,38 @@ export async function POST(request: Request) {
     return getApiErrorResponse(error, "Invalid edit request.");
   }
 
+  let userId: string | null = null;
+  try {
+    userId = await getAuthenticatedUserId();
+  } catch (error) {
+    console.error("Unable to verify edit authentication:", error);
+    return Response.json(
+      { error: "Unable to verify authentication." },
+      { status: 500 },
+    );
+  }
+
+  if (!userId) {
+    return Response.json(
+      { error: "Authentication required.", code: "UNAUTHORIZED" },
+      { status: 401 },
+    );
+  }
+
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
     return Response.json(
       { error: "OPENAI_API_KEY is not configured." },
       { status: 500 },
+    );
+  }
+
+  const imagePreset = getImageModelPreset(input.modelId);
+  if (!imagePreset) {
+    return Response.json(
+      { error: "The selected image model is not supported." },
+      { status: 400 },
     );
   }
 
@@ -359,9 +425,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const client = new OpenAI({ apiKey, timeout: 120_000, maxRetries: 2 });
-  const model = process.env.OPENAI_MODEL ?? "gpt-5.6";
-  const imageModel = process.env.OPENAI_IMAGE_MODEL?.trim() || "gpt-image-2";
   const configuredSize = envOption(
     process.env.OPENAI_IMAGE_SIZE,
     IMAGE_SIZES,
@@ -372,7 +435,7 @@ export async function POST(request: Request) {
   try {
     imageSize = resolveImageSize(
       input.aspectRatio,
-      imageModel,
+      imagePreset.providerModel,
       configuredSize,
     );
   } catch (error) {
@@ -384,8 +447,49 @@ export async function POST(request: Request) {
     );
   }
 
+  const requestId = randomUUID();
+  const chargeIdempotencyKey = `generation:${requestId}`;
+  const refundIdempotencyKey = `generation-refund:${requestId}`;
+  let creditsRemaining: number;
+
+  try {
+    const charge = await chargeGenerationCredits({
+      userId,
+      amount: imagePreset.creditCost,
+      idempotencyKey: chargeIdempotencyKey,
+      metadata: {
+        requestId,
+        modelId: imagePreset.id,
+        aspectRatio: input.aspectRatio || null,
+        webSearch: input.webSearch,
+      },
+    });
+    creditsRemaining = charge.balance;
+  } catch (error) {
+    if (error instanceof InsufficientCreditsError) {
+      return Response.json(
+        {
+          error: error.message,
+          code: error.code,
+          balance: error.balance,
+          required: error.required,
+        },
+        { status: 402 },
+      );
+    }
+
+    console.error("Unable to reserve generation credits:", { requestId, error });
+    return Response.json(
+      { error: "Unable to reserve generation credits." },
+      { status: 500 },
+    );
+  }
+
+  const client = new OpenAI({ apiKey, timeout: 120_000, maxRetries: 2 });
+  const model = process.env.OPENAI_MODEL ?? "gpt-5.6";
   let maskFileId: string | null = null;
   let referenceFileIds: string[] = [];
+  let generationSucceeded = false;
 
   try {
     if (input.mask) {
@@ -457,25 +561,12 @@ export async function POST(request: Request) {
           {
             type: "image_generation",
             action: "edit",
-            model: imageModel,
-            quality: envOption(
-              process.env.OPENAI_IMAGE_QUALITY,
-              IMAGE_QUALITIES,
-              "low",
-            ),
+            model: imagePreset.providerModel,
+            quality: imagePreset.quality,
             size: imageSize,
             ...(maskFileId
               ? { input_image_mask: { file_id: maskFileId } }
               : {}),
-            ...(imageModel === "gpt-image-2" || imageModel.startsWith("gpt-image-2-")
-              ? {}
-              : {
-                  input_fidelity: envOption(
-                    process.env.OPENAI_IMAGE_INPUT_FIDELITY,
-                    INPUT_FIDELITIES,
-                    "low",
-                  ),
-                }),
           },
         ],
         tool_choice: { type: "image_generation" },
@@ -486,8 +577,8 @@ export async function POST(request: Request) {
     const generatedImage = getGeneratedImage(response);
 
     if (!generatedImage) {
-      return Response.json(
-        { error: "OpenAI did not return an edited image." },
+      throw Object.assign(
+        new Error("OpenAI did not return an edited image."),
         { status: 502 },
       );
     }
@@ -499,6 +590,8 @@ export async function POST(request: Request) {
       request.signal,
     );
 
+    generationSucceeded = true;
+
     return new Response(new Uint8Array(uploadedImage.buffer), {
       status: 200,
       headers: {
@@ -507,15 +600,37 @@ export async function POST(request: Request) {
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
         "X-Image-Reference": uploadedImage.imageRef,
+        "X-Credits-Remaining": String(creditsRemaining),
       },
     });
   } catch (error) {
+    if (!generationSucceeded) {
+      try {
+        const refund = await refundGenerationCredits({
+          userId,
+          chargeIdempotencyKey,
+          refundIdempotencyKey,
+          metadata: {
+            requestId,
+            modelId: imagePreset.id,
+            reason: request.signal.aborted ? "request_cancelled" : "generation_failed",
+          },
+        });
+        creditsRemaining = refund.balance;
+      } catch (refundError) {
+        console.error("Generation credit refund failed:", {
+          requestId,
+          refundError,
+        });
+      }
+    }
+
     if (error instanceof ApiRequestError) {
       return getApiErrorResponse(error, "Invalid edit request.");
     }
 
     const mappedError = mapOpenAIError(error, input.webSearch);
-    console.error("OpenAI image edit failed:", error);
+    console.error("OpenAI image edit failed:", { requestId, error });
 
     return Response.json(
       {

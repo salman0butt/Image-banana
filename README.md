@@ -1,6 +1,6 @@
 # Image's Banana
 
-AI-assisted image editor built with Next.js, React, TypeScript, Zustand, Supabase Auth, Sharp, and the OpenAI Responses / image-generation APIs.
+AI-assisted image editor built with Next.js, React, TypeScript, Zustand, TanStack Query, Supabase Auth, Sharp, and the OpenAI Responses / image-generation APIs.
 
 ## Architecture
 
@@ -17,6 +17,15 @@ The primary image path is binary-first:
 The signed reference prevents clients from substituting arbitrary OpenAI file IDs and also carries trusted source dimensions for mask validation.
 
 Authentication uses Supabase Auth with SSR-compatible cookies. The root Next.js proxy refreshes sessions and protects application pages/API routes by default, while sensitive server endpoints verify the authenticated identity independently. User profile metadata is stored in `public.profiles` with Row Level Security so users can read/update only their own profile.
+
+Generation billing is server-controlled:
+
+1. The browser selects an allowlisted image preset and shows its credit cost.
+2. `/api/edit-image` resolves that public preset ID to a trusted provider model/quality and cost.
+3. Credits are atomically reserved through a service-role-only Supabase RPC before any OpenAI request.
+4. Insufficient balances stop the provider request.
+5. Failed or cancelled requests receive an idempotent refund linked to the original ledger charge.
+6. Browser clients have read-only RLS access to their own wallet and ledger rows.
 
 ## Requirements
 
@@ -41,13 +50,13 @@ Configure the required values in `.env.local`:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 - `NEXT_PUBLIC_SITE_URL` (defaults to `http://localhost:3000` in `.env.example`)
+- `SUPABASE_SERVICE_ROLE_KEY` — server only; required for trusted credit mutations and must never use a `NEXT_PUBLIC_` prefix
 - `OPENAI_API_KEY`
+- `SIGNUP_CREDITS` — optional; defaults to `25`
 
-`SUPABASE_SERVICE_ROLE_KEY` is reserved for later trusted server-side administrative operations and must never be exposed through a `NEXT_PUBLIC_` variable.
+Apply the SQL migrations in `supabase/migrations` to the Supabase project in filename order. Optional OpenAI output settings are documented in `.env.example`. Image model/quality selection is intentionally controlled by `lib/image-models.ts` so arbitrary client model IDs cannot bypass pricing rules.
 
-Apply the SQL migration in `supabase/migrations/20260823010000_auth_profiles.sql` to the Supabase project before using authenticated profile features. Optional OpenAI model/output settings are documented in `.env.example`.
-
-If Supabase public configuration is missing, public auth pages remain renderable and auth actions now return a clear configuration message instead of surfacing a raw server runtime error.
+If Supabase public configuration is missing, public auth pages remain renderable and auth actions return a clear configuration message instead of surfacing a raw server runtime error.
 
 ## Authentication
 
@@ -83,7 +92,10 @@ The production dependency audit is the security gate because production runtime 
 
 - Supabase Auth protects application pages and APIs by default.
 - Sensitive server endpoints independently verify authenticated claims rather than trusting client state alone.
-- `public.profiles` uses Row Level Security; users can only select/update their own row.
+- `public.profiles`, `credit_wallets`, and `credit_ledger` use Row Level Security.
+- Users can read only their own wallet/ledger rows; browser roles cannot mutate credit state directly.
+- Credit mutation RPCs are revoked from browser roles and executable only by `service_role`.
+- Credit balances cannot become negative; generation charges use row locking and unique per-user idempotency keys.
 - Profile creation is trigger-owned; no browser INSERT or DELETE policy is provided.
 - Auth redirect targets are constrained to local application paths to prevent open redirects.
 - Supabase configuration failures are surfaced as controlled auth/API errors rather than raw runtime overlays.
@@ -98,7 +110,7 @@ The production dependency audit is the security gate because production runtime 
 
 ### Production requirement: shared abuse controls
 
-The included rate limiter is intentionally only a process-local safety net. Before exposing OpenAI-backed endpoints publicly at scale, add a shared quota/rate-limit layer (for example Redis or a platform gateway) so limits work across instances and users. Authentication is now present, but authentication alone is not a billing or abuse-control boundary.
+The included rate limiter is intentionally only a process-local safety net. Before exposing OpenAI-backed endpoints publicly at scale, add a shared quota/rate-limit layer (for example Redis or a platform gateway) so limits work across instances and users. Credit billing is persistent and server-controlled, but it does not replace infrastructure-level abuse protection.
 
 ## Deployment notes
 
@@ -123,5 +135,8 @@ Implemented in the current foundation:
 - Supabase authentication/session refresh
 - protected application routes and authenticated API identity checks
 - user profiles with RLS
+- server-controlled image presets
+- credit wallet + ledger-style transaction history
+- generation charging, insufficient-credit blocking, and idempotent refunds
 
-Still intentionally deferred to follow-up product slices: credit wallet/ledger and payments, durable Supabase Storage assets, persistent generation history/jobs, model/tool registry expansion, and production observability/shared rate limiting.
+Still intentionally deferred to follow-up product slices: payments, durable Supabase Storage assets, persistent generation history/jobs, model/tool registry expansion, and production observability/shared rate limiting.

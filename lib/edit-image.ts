@@ -1,3 +1,4 @@
+import { DEFAULT_IMAGE_MODEL_ID } from "@/lib/image-models";
 import type { EditorReferenceFile } from "@/types/editor";
 
 const MAX_REFERENCE_FILES = 5;
@@ -6,6 +7,7 @@ const MAX_REFERENCE_FILE_BYTES = 20 * 1024 * 1024;
 type EditImageOptions = {
   imageRef: string;
   prompt: string;
+  modelId?: string;
   webSearch?: boolean;
   userFiles?: EditorReferenceFile[];
   aspectRatio?: string;
@@ -21,6 +23,7 @@ type EditImageErrorResponse = {
 type EditImageResult = {
   imageUrl: string;
   imageRef: string;
+  creditsRemaining: number | null;
 };
 
 async function readError(response: Response): Promise<EditImageErrorResponse> {
@@ -38,6 +41,14 @@ function safeFilename(filename: string | undefined, index: number): string {
     .slice(0, 120);
 
   return sanitized || `reference-${index + 1}`;
+}
+
+function readCreditsRemaining(response: Response): number | null {
+  const raw = response.headers.get("x-credits-remaining");
+  if (!raw) return null;
+
+  const value = Number(raw);
+  return Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 async function appendReferenceFiles(
@@ -77,6 +88,7 @@ async function appendReferenceFiles(
 export async function editImage({
   imageRef,
   prompt,
+  modelId = DEFAULT_IMAGE_MODEL_ID,
   webSearch = false,
   userFiles = [],
   aspectRatio = "",
@@ -86,6 +98,7 @@ export async function editImage({
   const formData = new FormData();
   formData.append("imageRef", imageRef);
   formData.append("prompt", prompt);
+  formData.append("modelId", modelId);
   formData.append("webSearch", String(webSearch));
   formData.append("aspectRatio", aspectRatio);
 
@@ -132,5 +145,6 @@ export async function editImage({
   return {
     imageUrl: URL.createObjectURL(imageBlob),
     imageRef: imageRefHeader,
+    creditsRemaining: readCreditsRemaining(response),
   };
 }

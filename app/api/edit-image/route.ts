@@ -10,6 +10,14 @@ import {
   getApiErrorResponse,
 } from "@/lib/api-security";
 import {
+  completeGenerationJob,
+  createGenerationJob,
+  failGenerationJob,
+  getUserAsset,
+  openEditableAsset,
+  persistGeneratedAsset,
+} from "@/lib/generation-history";
+import {
   chargeGenerationCredits,
   InsufficientCreditsError,
   refundGenerationCredits,
@@ -39,6 +47,8 @@ const MAX_REQUEST_BYTES =
   MAX_MASK_BYTES + MAX_REFERENCE_FILES * MAX_REFERENCE_FILE_BYTES + 2 * 1024 * 1024;
 const MAX_IMAGE_PIXELS = 40_000_000;
 const EDITS_PER_MINUTE = 8;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function envOption<const T extends readonly string[]>(
   value: string | undefined,
@@ -55,7 +65,7 @@ type ValidatedMask = {
 };
 
 type EditImageRequest = {
-  imageRef: string;
+  sourceAssetId: string;
   mask: ValidatedMask | null;
   prompt: string;
   webSearch: boolean;
@@ -117,14 +127,16 @@ export async function readEditImageRequest(
     throw new ApiRequestError("Invalid multipart request body.", 400);
   }
 
-  const imageRefValue = formData.get("imageRef");
   const promptValue = formData.get("prompt");
   const maskValue = formData.get("mask");
   const modelIdValue = formData.get("modelId");
+  const sourceAssetIdValue = formData.get("sourceAssetId");
   const prompt = typeof promptValue === "string" ? promptValue.trim() : "";
+  const sourceAssetId =
+    typeof sourceAssetIdValue === "string" ? sourceAssetIdValue.trim() : "";
 
-  if (typeof imageRefValue !== "string" || !imageRefValue.trim()) {
-    throw new ApiRequestError("An uploaded image reference is required.", 400);
+  if (!UUID_PATTERN.test(sourceAssetId)) {
+    throw new ApiRequestError("A valid source image asset is required.", 400);
   }
 
   if (!prompt) {
@@ -180,7 +192,7 @@ export async function readEditImageRequest(
       : DEFAULT_IMAGE_MODEL_ID;
 
   return {
-    imageRef: imageRefValue.trim(),
+    sourceAssetId,
     mask,
     prompt,
     webSearch: formData.get("webSearch") === "true",
@@ -304,7 +316,13 @@ async function uploadGeneratedImage(
   generatedImage: string,
   apiKey: string,
   signal: AbortSignal,
-): Promise<{ buffer: Buffer; imageRef: string }> {
+): Promise<{
+  buffer: Buffer;
+  imageRef: string;
+  fileId: string;
+  width: number;
+  height: number;
+}> {
   if (!generatedImage.startsWith(PNG_DATA_URL_PREFIX)) {
     throw new Error("OpenAI returned an unsupported image format.");
   }
@@ -343,6 +361,9 @@ async function uploadGeneratedImage(
       metadata.width,
       metadata.height,
     ),
+    fileId: uploaded.id,
+    width: metadata.width,
+    height: metadata.height,
   };
 }
 
@@ -415,12 +436,30 @@ export async function POST(request: Request) {
     );
   }
 
-  let sourceReference: ReturnType<typeof parseImageReference>;
+  let sourceAsset;
   try {
-    sourceReference = parseImageReference(apiKey, input.imageRef);
+    sourceAsset = await getUserAsset(userId, input.sourceAssetId);
   } catch (error) {
+    console.error("Unable to load source image asset:", error);
     return Response.json(
-      { error: error instanceof Error ? error.message : "Invalid image reference." },
+      { error: "Unable to load the source image." },
+      { status: 500 },
+    );
+  }
+
+  if (!sourceAsset) {
+    return Response.json(
+      { error: "The source image asset is unavailable." },
+      { status: 400 },
+    );
+  }
+
+  if (
+    input.mask &&
+    (input.mask.width !== sourceAsset.width || input.mask.height !== sourceAsset.height)
+  ) {
+    return Response.json(
+      { error: "The mask and source image must have the same dimensions." },
       { status: 400 },
     );
   }
@@ -450,6 +489,24 @@ export async function POST(request: Request) {
   const requestId = randomUUID();
   const chargeIdempotencyKey = `generation:${requestId}`;
   const refundIdempotencyKey = `generation-refund:${requestId}`;
+
+  try {
+    await createGenerationJob({
+      id: requestId,
+      userId,
+      sourceAssetId: input.sourceAssetId,
+      modelId: imagePreset.id,
+      creditCost: imagePreset.creditCost,
+      prompt: input.prompt,
+    });
+  } catch (error) {
+    console.error("Unable to create generation job:", { requestId, error });
+    return Response.json(
+      { error: "Unable to create the generation job." },
+      { status: 500 },
+    );
+  }
+
   let creditsRemaining: number;
 
   try {
@@ -460,12 +517,25 @@ export async function POST(request: Request) {
       metadata: {
         requestId,
         modelId: imagePreset.id,
+        sourceAssetId: input.sourceAssetId,
         aspectRatio: input.aspectRatio || null,
         webSearch: input.webSearch,
       },
     });
     creditsRemaining = charge.balance;
   } catch (error) {
+    await failGenerationJob({
+      id: requestId,
+      userId,
+      status: "failed",
+      errorCode:
+        error instanceof InsufficientCreditsError
+          ? "insufficient_credits"
+          : "credit_reservation_failed",
+      errorMessage:
+        error instanceof Error ? error.message : "Unable to reserve generation credits.",
+    });
+
     if (error instanceof InsufficientCreditsError) {
       return Response.json(
         {
@@ -492,6 +562,15 @@ export async function POST(request: Request) {
   let generationSucceeded = false;
 
   try {
+    const editableSource = await openEditableAsset({
+      userId,
+      assetId: input.sourceAssetId,
+      client,
+      apiKey,
+      signal: request.signal,
+    });
+    const sourceReference = parseImageReference(apiKey, editableSource.imageRef);
+
     if (input.mask) {
       maskFileId = await uploadMask(
         client,
@@ -590,6 +669,25 @@ export async function POST(request: Request) {
       request.signal,
     );
 
+    if (request.signal.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
+
+    const persistedAsset = await persistGeneratedAsset({
+      userId,
+      parentAssetId: input.sourceAssetId,
+      buffer: uploadedImage.buffer,
+      width: uploadedImage.width,
+      height: uploadedImage.height,
+      openAIFileId: uploadedImage.fileId,
+    });
+
+    await completeGenerationJob({
+      id: requestId,
+      userId,
+      outputAssetId: persistedAsset.id,
+    });
+
     generationSucceeded = true;
 
     return new Response(new Uint8Array(uploadedImage.buffer), {
@@ -600,11 +698,30 @@ export async function POST(request: Request) {
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
         "X-Image-Reference": uploadedImage.imageRef,
+        "X-Image-Asset-Id": persistedAsset.id,
         "X-Credits-Remaining": String(creditsRemaining),
       },
     });
   } catch (error) {
+    const cancelled =
+      request.signal.aborted ||
+      (error instanceof Error && error.name === "AbortError");
+
     if (!generationSucceeded) {
+      await failGenerationJob({
+        id: requestId,
+        userId,
+        status: cancelled ? "cancelled" : "failed",
+        errorCode:
+          error instanceof ApiRequestError
+            ? "invalid_edit_request"
+            : cancelled
+              ? "request_cancelled"
+              : "generation_failed",
+        errorMessage:
+          error instanceof Error ? error.message : "Image generation failed.",
+      });
+
       try {
         const refund = await refundGenerationCredits({
           userId,
@@ -613,7 +730,8 @@ export async function POST(request: Request) {
           metadata: {
             requestId,
             modelId: imagePreset.id,
-            reason: request.signal.aborted ? "request_cancelled" : "generation_failed",
+            sourceAssetId: input.sourceAssetId,
+            reason: cancelled ? "request_cancelled" : "generation_failed",
           },
         });
         creditsRemaining = refund.balance;

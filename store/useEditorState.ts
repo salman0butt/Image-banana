@@ -23,7 +23,9 @@ type RunEditOptions = {
 type EditorState = {
   image: string | null;
   imageRef: string | null;
+  assetId: string | null;
   imageRefsByImage: Record<string, string>;
+  assetIdsByImage: Record<string, string>;
   mask: Blob | null;
   prompt: string;
   history: string[];
@@ -44,9 +46,17 @@ type EditorState = {
   clearHistoryExceptCurrent: () => void;
   undo: () => void;
   redo: () => void;
-  setImage: (imageData: string, imageRef?: string | null) => void;
+  setImage: (
+    imageData: string,
+    imageRef?: string | null,
+    assetId?: string | null,
+  ) => void;
   clearImage: () => void;
-  attachImageRef: (imageData: string, imageRef: string) => void;
+  attachImageRef: (
+    imageData: string,
+    imageRef: string,
+    assetId?: string | null,
+  ) => void;
   setPrompt: (prompt: string) => void;
   setErrorMessage: (message: string | null) => void;
   toggleHistory: () => void;
@@ -92,20 +102,20 @@ export const useEditorStore = create<EditorState>()(
       let activeEditController: AbortController | null = null;
 
       const requireUploadedImage = () => {
-        const { image, imageRef } = get();
+        const { image, assetId } = get();
 
         if (!image) {
           throw new Error("Upload an image before editing.");
         }
 
-        if (!imageRef) {
+        if (!assetId) {
           throw new Error("The image is still uploading. Try again in a moment.");
         }
 
-        return imageRef;
+        return assetId;
       };
 
-      const commitImage = (image: string, imageRef: string) => {
+      const commitImage = (image: string, imageRef: string, assetId: string) => {
         const state = get();
         const retainedHistory = state.history.slice(0, state.historyIndex + 1);
         const discardedHistory = state.history.slice(state.historyIndex + 1);
@@ -120,14 +130,23 @@ export const useEditorStore = create<EditorState>()(
           ...state.imageRefsByImage,
           [image]: imageRef,
         };
+        const nextAssetIds = {
+          ...state.assetIdsByImage,
+          [image]: assetId,
+        };
         const boundedRefs = Object.fromEntries(
           Object.entries(nextRefs).filter(([url]) => boundedHistory.includes(url)),
+        );
+        const boundedAssetIds = Object.fromEntries(
+          Object.entries(nextAssetIds).filter(([url]) => boundedHistory.includes(url)),
         );
 
         set({
           image,
           imageRef,
+          assetId,
           imageRefsByImage: boundedRefs,
+          assetIdsByImage: boundedAssetIds,
           mask: null,
           history: boundedHistory,
           historyIndex: boundedHistory.length - 1,
@@ -151,9 +170,9 @@ export const useEditorStore = create<EditorState>()(
           throw new Error(message);
         }
 
-        let imageRef: string;
+        let sourceAssetId: string;
         try {
-          imageRef = requireUploadedImage();
+          sourceAssetId = requireUploadedImage();
         } catch (error) {
           const message = errorMessage(error);
           set({ errorMessage: message });
@@ -167,7 +186,7 @@ export const useEditorStore = create<EditorState>()(
 
         try {
           const result = await editImage({
-            imageRef,
+            sourceAssetId,
             prompt: normalizedPrompt,
             modelId: modelId ?? get().selectedModelId,
             webSearch,
@@ -181,7 +200,7 @@ export const useEditorStore = create<EditorState>()(
             if (result.creditsRemaining !== null) {
               set({ creditBalance: result.creditsRemaining });
             }
-            commitImage(result.imageUrl, result.imageRef);
+            commitImage(result.imageUrl, result.imageRef, result.assetId);
           } else {
             revokeImageUrl(result.imageUrl);
           }
@@ -204,7 +223,9 @@ export const useEditorStore = create<EditorState>()(
       return {
         image: null,
         imageRef: null,
+        assetId: null,
         imageRefsByImage: {},
+        assetIdsByImage: {},
         mask: null,
         prompt: "",
         history: [],
@@ -224,7 +245,7 @@ export const useEditorStore = create<EditorState>()(
         setUserFiles: (userFiles) => set({ userFiles }),
         setSelectedModelId: (selectedModelId) => set({ selectedModelId }),
         setCreditBalance: (creditBalance) => set({ creditBalance }),
-        setImage: (imageData, imageRef = null) => {
+        setImage: (imageData, imageRef = null, assetId = null) => {
           activeEditController?.abort();
           activeEditController = null;
           const state = get();
@@ -236,7 +257,9 @@ export const useEditorStore = create<EditorState>()(
             {
               image: imageData,
               imageRef,
+              assetId,
               imageRefsByImage: imageRef ? { [imageData]: imageRef } : {},
+              assetIdsByImage: assetId ? { [imageData]: assetId } : {},
               mask: null,
               history: [imageData],
               historyIndex: 0,
@@ -256,7 +279,9 @@ export const useEditorStore = create<EditorState>()(
           set({
             image: null,
             imageRef: null,
+            assetId: null,
             imageRefsByImage: {},
+            assetIdsByImage: {},
             mask: null,
             history: [],
             historyIndex: 0,
@@ -266,7 +291,7 @@ export const useEditorStore = create<EditorState>()(
             userFiles: [],
           });
         },
-        attachImageRef: (imageData, imageRef) =>
+        attachImageRef: (imageData, imageRef, assetId = null) =>
           set((state) => {
             if (state.image !== imageData || !state.history.includes(imageData)) {
               return {};
@@ -274,10 +299,19 @@ export const useEditorStore = create<EditorState>()(
 
             return {
               imageRef,
+              assetId,
               imageRefsByImage: {
                 ...state.imageRefsByImage,
                 [imageData]: imageRef,
               },
+              ...(assetId
+                ? {
+                    assetIdsByImage: {
+                      ...state.assetIdsByImage,
+                      [imageData]: assetId,
+                    },
+                  }
+                : {}),
             };
           }),
         setPrompt: (prompt) => set({ prompt }),
@@ -299,6 +333,7 @@ export const useEditorStore = create<EditorState>()(
             historyIndex: index,
             image,
             imageRef: state.imageRefsByImage[image] ?? null,
+            assetId: state.assetIdsByImage[image] ?? null,
             mask: null,
             errorMessage: null,
           });
@@ -313,12 +348,17 @@ export const useEditorStore = create<EditorState>()(
             .forEach(revokeImageUrl);
 
           const currentRef = state.imageRefsByImage[currentImage];
+          const currentAssetId = state.assetIdsByImage[currentImage];
           set({
             history: [currentImage],
             historyIndex: 0,
             image: currentImage,
             imageRef: currentRef ?? null,
+            assetId: currentAssetId ?? null,
             imageRefsByImage: currentRef ? { [currentImage]: currentRef } : {},
+            assetIdsByImage: currentAssetId
+              ? { [currentImage]: currentAssetId }
+              : {},
             mask: null,
           });
         },
@@ -332,10 +372,7 @@ export const useEditorStore = create<EditorState>()(
             setHistoryIndex(historyIndex + 1);
           }
         },
-        toggleHistory: () =>
-          set(({ history, showHistory }) =>
-            history.length ? { showHistory: !showHistory } : {},
-          ),
+        toggleHistory: () => set(({ showHistory }) => ({ showHistory: !showHistory })),
         setLoading: (isLoading) => set({ isLoading }),
         setUploading: (isUploading) => set({ isUploading }),
         cancelEdit: () => {

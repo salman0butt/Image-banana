@@ -5,7 +5,7 @@ const MAX_REFERENCE_FILES = 5;
 const MAX_REFERENCE_FILE_BYTES = 20 * 1024 * 1024;
 
 type EditImageOptions = {
-  imageRef: string;
+  sourceAssetId: string;
   prompt: string;
   modelId?: string;
   webSearch?: boolean;
@@ -23,6 +23,7 @@ type EditImageErrorResponse = {
 type EditImageResult = {
   imageUrl: string;
   imageRef: string;
+  assetId: string;
   creditsRemaining: number | null;
 };
 
@@ -86,7 +87,7 @@ async function appendReferenceFiles(
 }
 
 export async function editImage({
-  imageRef,
+  sourceAssetId,
   prompt,
   modelId = DEFAULT_IMAGE_MODEL_ID,
   webSearch = false,
@@ -96,7 +97,7 @@ export async function editImage({
   signal,
 }: EditImageOptions): Promise<EditImageResult> {
   const formData = new FormData();
-  formData.append("imageRef", imageRef);
+  formData.append("sourceAssetId", sourceAssetId);
   formData.append("prompt", prompt);
   formData.append("modelId", modelId);
   formData.append("webSearch", String(webSearch));
@@ -126,9 +127,14 @@ export async function editImage({
   }
 
   const imageRefHeader = response.headers.get("x-image-reference");
+  const imageAssetHeader = response.headers.get("x-image-asset-id");
 
   if (!imageRefHeader) {
     throw new Error("The API returned no image reference.");
+  }
+
+  if (!imageAssetHeader) {
+    throw new Error("The API returned no persistent image asset.");
   }
 
   const contentType = response.headers.get("content-type") ?? "";
@@ -145,6 +151,7 @@ export async function editImage({
   return {
     imageUrl: URL.createObjectURL(imageBlob),
     imageRef: imageRefHeader,
+    assetId: imageAssetHeader,
     creditsRemaining: readCreditsRemaining(response),
   };
 }

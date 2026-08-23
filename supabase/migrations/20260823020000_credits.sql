@@ -34,6 +34,11 @@ on public.credit_ledger (user_id, created_at desc);
 alter table public.credit_wallets enable row level security;
 alter table public.credit_ledger enable row level security;
 
+-- Defense in depth: even if a future RLS policy is accidentally broadened,
+-- browser roles do not receive direct mutation privileges on credit state.
+revoke insert, update, delete, truncate on table public.credit_wallets from anon, authenticated;
+revoke insert, update, delete, truncate on table public.credit_ledger from anon, authenticated;
+
 drop trigger if exists credit_wallets_set_updated_at on public.credit_wallets;
 create trigger credit_wallets_set_updated_at
 before update on public.credit_wallets

@@ -1,6 +1,6 @@
 # Image's Banana
 
-AI-assisted image editor built with Next.js, React, TypeScript, Zustand, Sharp, and the OpenAI Responses / image-generation APIs.
+AI-assisted image editor built with Next.js, React, TypeScript, Zustand, Supabase Auth, Sharp, and the OpenAI Responses / image-generation APIs.
 
 ## Architecture
 
@@ -16,11 +16,14 @@ The primary image path is binary-first:
 
 The signed reference prevents clients from substituting arbitrary OpenAI file IDs and also carries trusted source dimensions for mask validation.
 
+Authentication uses Supabase Auth with SSR-compatible cookies. The root Next.js proxy refreshes sessions and protects application pages/API routes by default, while sensitive server endpoints verify the authenticated identity independently. User profile metadata is stored in `public.profiles` with Row Level Security so users can read/update only their own profile.
+
 ## Requirements
 
 - Node.js 22+
 - pnpm 10.15+
 - Bun for the current unit-test runner
+- A Supabase project
 - An OpenAI API key
 
 ## Setup
@@ -33,24 +36,57 @@ pnpm dev
 
 Open `http://localhost:3000`.
 
-Set `OPENAI_API_KEY` in `.env.local`. Optional model/output settings are documented in `.env.example`.
+Configure the required values in `.env.local`:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `NEXT_PUBLIC_SITE_URL` (defaults to `http://localhost:3000` in `.env.example`)
+- `OPENAI_API_KEY`
+
+`SUPABASE_SERVICE_ROLE_KEY` is reserved for later trusted server-side administrative operations and must never be exposed through a `NEXT_PUBLIC_` variable.
+
+Apply the SQL migration in `supabase/migrations/20260823010000_auth_profiles.sql` to the Supabase project before using authenticated profile features. Optional OpenAI model/output settings are documented in `.env.example`.
+
+If Supabase public configuration is missing, public auth pages remain renderable and auth actions now return a clear configuration message instead of surfacing a raw server runtime error.
+
+## Authentication
+
+The current auth foundation includes:
+
+- email/password registration and sign-in
+- email verification callback support
+- forgot-password and password-update flows
+- sign-out
+- protected `/account`
+- authenticated `/api/auth/me`
+- safe local redirect validation
+- Supabase profile provisioning through an auth trigger
+- RLS policies allowing users to select/update only their own profile
+
+OAuth/social providers are not configured yet, but the Supabase Auth foundation supports adding them later without replacing the current session model.
 
 ## Validation
 
-Run the same checks used by CI:
+Run the same blocking checks used by CI:
 
 ```bash
-pnpm audit --audit-level=high
+pnpm audit --prod --audit-level=high
 pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
 ```
 
-The pull-request CI runs with a frozen pnpm lockfile and read-only repository permissions.
+The production dependency audit is the security gate because production runtime dependencies are what ship with the application. A full `pnpm audit --audit-level=high` may additionally report inherited vulnerabilities in development-only lint/tooling dependencies; review those findings separately and update the toolchain when compatible upstream releases are available rather than weakening the production audit gate.
 
 ## Security and resource controls
 
+- Supabase Auth protects application pages and APIs by default.
+- Sensitive server endpoints independently verify authenticated claims rather than trusting client state alone.
+- `public.profiles` uses Row Level Security; users can only select/update their own row.
+- Profile creation is trigger-owned; no browser INSERT or DELETE policy is provided.
+- Auth redirect targets are constrained to local application paths to prevent open redirects.
+- Supabase configuration failures are surfaced as controlled auth/API errors rather than raw runtime overlays.
 - Upload and edit endpoints validate declared request sizes and apply best-effort per-instance IP throttling.
 - Source and reference images are decoded with a pixel limit before use.
 - Edit masks must be PNGs with alpha and exactly match the signed source dimensions.
@@ -62,7 +98,7 @@ The pull-request CI runs with a frozen pnpm lockfile and read-only repository pe
 
 ### Production requirement: shared abuse controls
 
-The included rate limiter is intentionally only a process-local safety net. Before exposing OpenAI-backed endpoints publicly at scale, add authentication plus a shared quota/rate-limit layer (for example Redis or a platform gateway) so limits work across instances and users. Do not rely on the in-memory limiter as the billing/security boundary.
+The included rate limiter is intentionally only a process-local safety net. Before exposing OpenAI-backed endpoints publicly at scale, add a shared quota/rate-limit layer (for example Redis or a platform gateway) so limits work across instances and users. Authentication is now present, but authentication alone is not a billing or abuse-control boundary.
 
 ## Deployment notes
 
@@ -70,7 +106,7 @@ The included rate limiter is intentionally only a process-local safety net. Befo
 
 Do not deploy the current large-image transport to Vercel Functions unchanged if you intend to support images larger than the platform Function payload limit. Vercel currently limits Function request and response bodies to 4.5 MB.
 
-For production large-image support on Vercel, upload source/reference images directly from the browser to object storage (for example Vercel Blob or S3-compatible storage) and return generated images through object storage/CDN URLs rather than proxying large image bytes through a Function.
+For production large-image support on Vercel, upload source/reference images directly from the browser to object storage (for example Supabase Storage, Vercel Blob, or S3-compatible storage) and return generated images through object storage/CDN URLs rather than proxying large image bytes through a Function.
 
 Until that storage path is implemented, treat the Vercel large-file deployment path as a known production limitation.
 
@@ -80,4 +116,12 @@ On self-hosted/container Node deployments, also configure equivalent request lim
 
 ## Current scope
 
-The repository currently has no authentication, user database, billing/credit ledger, or durable application database. Those are product-level requirements before this becomes a public multi-user SaaS rather than a protected/demo editor.
+Implemented in the current foundation:
+
+- optimized drawing and binary image transport
+- cancellable image-edit requests
+- Supabase authentication/session refresh
+- protected application routes and authenticated API identity checks
+- user profiles with RLS
+
+Still intentionally deferred to follow-up product slices: credit wallet/ledger and payments, durable Supabase Storage assets, persistent generation history/jobs, model/tool registry expansion, and production observability/shared rate limiting.

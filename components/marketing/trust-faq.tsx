@@ -101,7 +101,7 @@ export function SecurityAndFaq({ signupCredits }: TrustFaqProps) {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-yellow-400">FAQ</p>
             <h2 className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-white sm:text-4xl">Questions before your first edit</h2>
-            <p className="mt-4 text-base leading-7 text-zinc-400">Answers are based on the product's current behavior and limits, not future marketing promises.</p>
+            <p className="mt-4 text-base leading-7 text-zinc-400">Answers are based on the product&apos;s current behavior and limits, not future marketing promises.</p>
           </div>
           <Accordion type="single" collapsible className="w-full">
             {faq.map(([question, answer], index) => (

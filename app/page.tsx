@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+
 import { BenefitsStrip, FeaturesAndTools, HowItWorks, TransformationShowcase, UseCases } from "@/components/marketing/product-sections";
 import { CreditsAndPricing } from "@/components/marketing/credits-pricing";
 import { FinalCtaAndFooter } from "@/components/marketing/footer-cta";
@@ -7,6 +9,12 @@ import { SecurityAndFaq } from "@/components/marketing/trust-faq";
 import { getConfiguredSignupCredits } from "@/lib/credits";
 import { getSupabasePublicConfig } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
+
+export const metadata: Metadata = {
+  alternates: {
+    canonical: "/",
+  },
+};
 
 async function isAuthenticated(): Promise<boolean> {
   if (!getSupabasePublicConfig()) return false;

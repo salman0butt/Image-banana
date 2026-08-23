@@ -29,9 +29,19 @@ test("authenticated users get read-only own-row access", () => {
   expect(migration).toContain("revoke all on table public.generation_jobs from anon, authenticated");
   expect(migration).toContain("grant select on table public.image_assets to authenticated");
   expect(migration).toContain("grant select on table public.generation_jobs to authenticated");
+  expect(migration).not.toMatch(/grant\s+(?:insert|update|delete)[^;]*to authenticated/i);
   expect(migration).toContain('"image_assets_select_own"');
   expect(migration).toContain('"generation_jobs_select_own"');
   expect(migration).toContain("auth.uid()) = user_id");
+});
+
+test("trusted service role can persist and update assets and jobs", () => {
+  expect(migration).toContain(
+    "grant select, insert, update, delete on table public.image_assets to service_role",
+  );
+  expect(migration).toContain(
+    "grant select, insert, update, delete on table public.generation_jobs to service_role",
+  );
 });
 
 test("does not grant browser storage-object policies", () => {

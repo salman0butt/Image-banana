@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { getSupabasePublicConfig } from "@/lib/supabase/config";
+
 export type SessionRefreshResult = {
   response: NextResponse;
   userId: string | null;
@@ -9,12 +11,11 @@ export type SessionRefreshResult = {
 export async function updateSession(
   request: NextRequest,
 ): Promise<SessionRefreshResult> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  const config = getSupabasePublicConfig();
 
-  if (!url || !publishableKey) {
-    // Keep static builds usable before a Supabase project is connected. At request
-    // time protected routes will still be treated as unauthenticated.
+  if (!config) {
+    // Keep static builds and public auth pages usable before a Supabase project is
+    // connected. Protected routes are treated as unauthenticated by the root proxy.
     return {
       response: NextResponse.next({ request }),
       userId: null,
@@ -23,7 +24,7 @@ export async function updateSession(
 
   let response = NextResponse.next({ request });
 
-  const supabase = createServerClient(url, publishableKey, {
+  const supabase = createServerClient(config.url, config.publishableKey, {
     cookies: {
       getAll() {
         return request.cookies.getAll();

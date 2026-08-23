@@ -5,7 +5,7 @@ const MAX_REFERENCE_FILES = 5;
 const MAX_REFERENCE_FILE_BYTES = 20 * 1024 * 1024;
 
 type EditImageOptions = {
-  imageRef: string;
+  sourceAssetId: string;
   prompt: string;
   modelId?: string;
   webSearch?: boolean;
@@ -20,17 +20,25 @@ type EditImageErrorResponse = {
   error?: unknown;
 };
 
-type EditImageResult = {
+type EditImageSuccessResponse = {
+  assetId?: unknown;
+  imageUrl?: unknown;
+  imageRef?: unknown;
+  creditsRemaining?: unknown;
+};
+
+export type EditImageResult = {
+  assetId: string;
   imageUrl: string;
   imageRef: string;
   creditsRemaining: number | null;
 };
 
-async function readError(response: Response): Promise<EditImageErrorResponse> {
+async function readJson(response: Response): Promise<unknown> {
   try {
-    return (await response.json()) as EditImageErrorResponse;
+    return await response.json();
   } catch {
-    return {};
+    return null;
   }
 }
 
@@ -39,16 +47,7 @@ function safeFilename(filename: string | undefined, index: number): string {
     ?.replace(/[\\/\0-\x1f\x7f]+/g, "_")
     .trim()
     .slice(0, 120);
-
   return sanitized || `reference-${index + 1}`;
-}
-
-function readCreditsRemaining(response: Response): number | null {
-  const raw = response.headers.get("x-credits-remaining");
-  if (!raw) return null;
-
-  const value = Number(raw);
-  return Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 async function appendReferenceFiles(
@@ -75,7 +74,6 @@ async function appendReferenceFiles(
       if (!blob.size) {
         throw new Error(`Reference file ${index + 1} is empty.`);
       }
-
       if (blob.size > MAX_REFERENCE_FILE_BYTES) {
         throw new Error("Each reference file must be smaller than 20 MB.");
       }
@@ -86,7 +84,7 @@ async function appendReferenceFiles(
 }
 
 export async function editImage({
-  imageRef,
+  sourceAssetId,
   prompt,
   modelId = DEFAULT_IMAGE_MODEL_ID,
   webSearch = false,
@@ -96,7 +94,7 @@ export async function editImage({
   signal,
 }: EditImageOptions): Promise<EditImageResult> {
   const formData = new FormData();
-  formData.append("imageRef", imageRef);
+  formData.append("sourceAssetId", sourceAssetId);
   formData.append("prompt", prompt);
   formData.append("modelId", modelId);
   formData.append("webSearch", String(webSearch));
@@ -113,38 +111,40 @@ export async function editImage({
     body: formData,
     signal,
   });
+  const data = await readJson(response);
 
   if (!response.ok) {
-    const data = await readError(response);
+    const errorData = (data ?? {}) as EditImageErrorResponse;
     const message =
-      typeof data.details === "string"
-        ? data.details
-        : typeof data.error === "string"
-          ? data.error
+      typeof errorData.details === "string"
+        ? errorData.details
+        : typeof errorData.error === "string"
+          ? errorData.error
           : "OpenAI image editing failed.";
     throw new Error(message);
   }
 
-  const imageRefHeader = response.headers.get("x-image-reference");
-
-  if (!imageRefHeader) {
-    throw new Error("The API returned no image reference.");
+  const result = (data ?? {}) as EditImageSuccessResponse;
+  if (
+    typeof result.assetId !== "string" ||
+    typeof result.imageUrl !== "string" ||
+    typeof result.imageRef !== "string" ||
+    !result.assetId ||
+    !result.imageUrl ||
+    !result.imageRef
+  ) {
+    throw new Error("The API returned invalid generated image metadata.");
   }
 
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.startsWith("image/")) {
-    throw new Error("The API returned an invalid image response.");
-  }
-
-  const imageBlob = await response.blob();
-
-  if (!imageBlob.size) {
-    throw new Error("The API returned no image.");
-  }
+  const creditsRemaining = Number(result.creditsRemaining);
 
   return {
-    imageUrl: URL.createObjectURL(imageBlob),
-    imageRef: imageRefHeader,
-    creditsRemaining: readCreditsRemaining(response),
+    assetId: result.assetId,
+    imageUrl: result.imageUrl,
+    imageRef: result.imageRef,
+    creditsRemaining:
+      Number.isInteger(creditsRemaining) && creditsRemaining >= 0
+        ? creditsRemaining
+        : null,
   };
 }

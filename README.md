@@ -1,53 +1,83 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Image's Banana
 
-## Getting Started
+AI-assisted image editor built with Next.js, React, TypeScript, Zustand, Sharp, and the OpenAI Responses / image-generation APIs.
 
-First, run the development server:
+## Architecture
+
+The browser renders the editor with layered canvases so brush and selection interactions do not reprocess every pixel on every pointer event.
+
+The primary image path is binary-first:
+
+1. A selected image is previewed immediately from a local object URL.
+2. The source is uploaded to `/api/upload-image` with `multipart/form-data`.
+3. The server validates/decompresses it with Sharp, normalizes it to PNG, uploads it to the OpenAI Files API, and returns a signed, expiring image reference.
+4. Image-edit requests send that small signed reference plus an optional binary PNG mask and optional binary image/PDF references.
+5. The generated image is returned as binary PNG and receives its own signed file reference so history versions remain editable.
+
+The signed reference prevents clients from substituting arbitrary OpenAI file IDs and also carries trusted source dimensions for mask validation.
+
+## Requirements
+
+- Node.js 22+
+- pnpm 10.15+
+- Bun for the current unit-test runner
+- An OpenAI API key
+
+## Setup
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-## OpenAI setup
-
-Create a local environment file and add an OpenAI API key:
-
-```bash
+pnpm install --frozen-lockfile
 cp .env.example .env.local
+pnpm dev
 ```
 
-Set `OPENAI_API_KEY` in `.env.local`. The app uses the Responses API with
-`gpt-5.6` for web search and the `gpt-image-2` image-generation tool for edits.
-The Search button enables a web-search pass before the image edit.
-Image generation defaults to low quality and 1024x1024 output. Input-fidelity
-settings are only configurable for image models before GPT Image 2; GPT Image 2
-always processes image inputs at high fidelity. Override
-`OPENAI_IMAGE_QUALITY` or `OPENAI_IMAGE_SIZE` when you need a more expensive
-final render.
+Open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Set `OPENAI_API_KEY` in `.env.local`. Optional model/output settings are documented in `.env.example`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Validation
 
-## Learn More
+Run the same checks used by CI:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+pnpm audit --audit-level=high
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The pull-request CI runs with a frozen pnpm lockfile and read-only repository permissions.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Security and resource controls
 
-## Deploy on Vercel
+- Upload and edit endpoints validate declared request sizes and apply best-effort per-instance IP throttling.
+- Source and reference images are decoded with a pixel limit before use.
+- Edit masks must be PNGs with alpha and exactly match the signed source dimensions.
+- Reference files are limited to supported images and PDFs.
+- OpenAI temporary mask/reference files are deleted after requests; source/generated files expire automatically.
+- Responses use `store: false`.
+- Browser object URLs are revoked when versions or attachments are discarded, and image history is bounded.
+- AI requests are cancellable through `AbortController`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Production requirement: shared abuse controls
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The included rate limiter is intentionally only a process-local safety net. Before exposing OpenAI-backed endpoints publicly at scale, add authentication plus a shared quota/rate-limit layer (for example Redis or a platform gateway) so limits work across instances and users. Do not rely on the in-memory limiter as the billing/security boundary.
+
+## Deployment notes
+
+### Vercel
+
+Do not deploy the current large-image transport to Vercel Functions unchanged if you intend to support images larger than the platform Function payload limit. Vercel currently limits Function request and response bodies to 4.5 MB.
+
+For production large-image support on Vercel, upload source/reference images directly from the browser to object storage (for example Vercel Blob or S3-compatible storage) and return generated images through object storage/CDN URLs rather than proxying large image bytes through a Function.
+
+Until that storage path is implemented, treat the Vercel large-file deployment path as a known production limitation.
+
+### Other Node hosting
+
+On self-hosted/container Node deployments, also configure equivalent request limits, timeouts, TLS, shared rate limiting, logs/metrics, and upstream proxy limits. The application-level limits do not replace infrastructure controls.
+
+## Current scope
+
+The repository currently has no authentication, user database, billing/credit ledger, or durable application database. Those are product-level requirements before this becomes a public multi-user SaaS rather than a protected/demo editor.

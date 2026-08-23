@@ -1,37 +1,108 @@
-import type { FileUIPart } from "ai";
+import type { EditorReferenceFile } from "@/types/editor";
+
+const MAX_REFERENCE_FILES = 5;
+const MAX_REFERENCE_FILE_BYTES = 20 * 1024 * 1024;
 
 type EditImageOptions = {
-  imageBase64: string | null;
+  imageRef: string;
   prompt: string;
   webSearch?: boolean;
-  userFiles?: FileUIPart[];
+  userFiles?: EditorReferenceFile[];
   aspectRatio?: string;
-  maskBase64?: string | null;
+  mask?: Blob | null;
+  signal?: AbortSignal;
 };
 
-type EditImageResponse = {
-  imageBase64?: unknown;
+type EditImageErrorResponse = {
   details?: unknown;
   error?: unknown;
 };
 
+type EditImageResult = {
+  imageUrl: string;
+  imageRef: string;
+};
+
+async function readError(response: Response): Promise<EditImageErrorResponse> {
+  try {
+    return (await response.json()) as EditImageErrorResponse;
+  } catch {
+    return {};
+  }
+}
+
+function safeFilename(filename: string | undefined, index: number): string {
+  const sanitized = filename
+    ?.replace(/[\\/\0-\x1f\x7f]+/g, "_")
+    .trim()
+    .slice(0, 120);
+
+  return sanitized || `reference-${index + 1}`;
+}
+
+async function appendReferenceFiles(
+  formData: FormData,
+  files: EditorReferenceFile[],
+  signal?: AbortSignal,
+): Promise<void> {
+  if (files.length > MAX_REFERENCE_FILES) {
+    throw new Error(`Attach at most ${MAX_REFERENCE_FILES} reference files.`);
+  }
+
+  await Promise.all(
+    files.map(async (file, index) => {
+      if (!file.url.startsWith("blob:") && !file.url.startsWith("data:")) {
+        throw new Error("Reference attachments must be local uploads.");
+      }
+
+      const response = await fetch(file.url, { signal });
+      if (!response.ok) {
+        throw new Error(`Could not read reference file ${index + 1}.`);
+      }
+
+      const blob = await response.blob();
+      if (!blob.size) {
+        throw new Error(`Reference file ${index + 1} is empty.`);
+      }
+
+      if (blob.size > MAX_REFERENCE_FILE_BYTES) {
+        throw new Error("Each reference file must be smaller than 20 MB.");
+      }
+
+      formData.append("referenceFile", blob, safeFilename(file.filename, index));
+    }),
+  );
+}
+
 export async function editImage({
-  imageBase64,
+  imageRef,
   prompt,
   webSearch = false,
   userFiles = [],
-  aspectRatio = '',
-  maskBase64 = null
-}: EditImageOptions): Promise<string> {
+  aspectRatio = "",
+  mask = null,
+  signal,
+}: EditImageOptions): Promise<EditImageResult> {
+  const formData = new FormData();
+  formData.append("imageRef", imageRef);
+  formData.append("prompt", prompt);
+  formData.append("webSearch", String(webSearch));
+  formData.append("aspectRatio", aspectRatio);
+
+  if (mask) {
+    formData.append("mask", mask, "mask.png");
+  }
+
+  await appendReferenceFiles(formData, userFiles, signal);
+
   const response = await fetch("/api/edit-image", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ imageBase64, prompt, webSearch, userFiles, aspectRatio, maskBase64 }),
+    body: formData,
+    signal,
   });
 
-  const data = (await response.json()) as EditImageResponse;
-
   if (!response.ok) {
+    const data = await readError(response);
     const message =
       typeof data.details === "string"
         ? data.details
@@ -41,9 +112,25 @@ export async function editImage({
     throw new Error(message);
   }
 
-  if (typeof data.imageBase64 !== "string" || !data.imageBase64) {
+  const imageRefHeader = response.headers.get("x-image-reference");
+
+  if (!imageRefHeader) {
+    throw new Error("The API returned no image reference.");
+  }
+
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.startsWith("image/")) {
+    throw new Error("The API returned an invalid image response.");
+  }
+
+  const imageBlob = await response.blob();
+
+  if (!imageBlob.size) {
     throw new Error("The API returned no image.");
   }
 
-  return data.imageBase64;
+  return {
+    imageUrl: URL.createObjectURL(imageBlob),
+    imageRef: imageRefHeader,
+  };
 }

@@ -1,283 +1,296 @@
 import { ToolType } from "@/lib/constants";
-import { useEditorStore } from "@/store/useEditorState"
-import { Point } from "motion/react";
-import { useCallback, useEffect, useRef } from "react";
+import { useEditorStore } from "@/store/useEditorState";
+import { useEffect, useRef } from "react";
 
-const MASK_EDIT_ALPHA_THRESHOLD = 10;
+type CanvasPoint = {
+  x: number;
+  y: number;
+};
+
+const HIGHLIGHT_COLOR = "rgba(255, 0, 0, 0.4)";
 
 function ImageEditor() {
-    const { image, selectedTool, brushSize, setMask } = useEditorStore();
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const imgRef = useRef<HTMLImageElement>(null);
-    const startPosRef = useRef<Point | null>(null);
-    const maskCanvasRef = useRef<HTMLCanvasElement>(null);
-    const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
-    const isDrawingRef = useRef<boolean>(false);
+  const { image, selectedTool, brushSize, setMask } = useEditorStore();
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const startPosRef = useRef<CanvasPoint | null>(null);
+  const maskCanvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const isDrawingRef = useRef(false);
 
+  useEffect(() => {
+    if (!image) return;
 
-    const draw = useCallback(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
+    let disposed = false;
+    const img = new Image();
 
-        // draw the image
-        const ctx = canvas.getContext("2d");
-        if (!ctx || !imgRef.current) return;
+    img.onload = () => {
+      if (disposed) return;
 
+      const canvas = canvasRef.current;
+      const overlayCanvas = overlayCanvasRef.current;
+      const previewCanvas = previewCanvasRef.current;
+      if (!canvas || !overlayCanvas || !previewCanvas) return;
+
+      imgRef.current = img;
+
+      for (const target of [canvas, overlayCanvas, previewCanvas]) {
+        target.width = img.naturalWidth;
+        target.height = img.naturalHeight;
+      }
+
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+      }
 
-        ctx.drawImage(imgRef.current, 0, 0);
+      overlayCanvas.getContext("2d")?.clearRect(
+        0,
+        0,
+        overlayCanvas.width,
+        overlayCanvas.height,
+      );
+      previewCanvas.getContext("2d")?.clearRect(
+        0,
+        0,
+        previewCanvas.width,
+        previewCanvas.height,
+      );
 
-        const overlayCanvas = overlayCanvasRef.current;
-        if (!overlayCanvas || !maskCanvasRef.current) return;
+      const maskCanvas = document.createElement("canvas");
+      maskCanvas.width = img.naturalWidth;
+      maskCanvas.height = img.naturalHeight;
+      maskCanvasRef.current = maskCanvas;
 
-        const overlayCtx = overlayCanvas.getContext("2d");
-        if (!overlayCtx) return;
+      const maskCtx = maskCanvas.getContext("2d");
+      if (maskCtx) {
+        maskCtx.fillStyle = "black";
+        maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+      }
+    };
 
-        // Copy the transparent edit region to a red preview overlay.
-        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    img.src = image;
 
-        overlayCtx.drawImage(maskCanvasRef.current, 0, 0);
+    return () => {
+      disposed = true;
+      img.onload = null;
+      img.onerror = null;
+    };
+  }, [image]);
 
-        // Change white color to red (highlight)
-        const imageData = overlayCtx.getImageData(
-            0,
-            0,
-            overlayCanvas.width,
-            overlayCanvas.height,
-        );
+  const getPointerPos = (clientX: number, clientY: number): CanvasPoint => {
+    const canvas = overlayCanvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
 
-        const data = imageData.data;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return { x: 0, y: 0 };
 
-        for (let i = 0; i < data.length; i += 4) {
-            // Transparent pixels are the editable region for OpenAI masks.
-            if (data[i + 3] < MASK_EDIT_ALPHA_THRESHOLD) {
-                data[i] = 255; // red
-                data[i + 1] = 0; // green
-                data[i + 2] = 0; // blue
-                data[i + 3] = 100; // alpha
-            } else {
-                // if black side
-                data[i + 3] = 0; // full transparent
-            }
-        }
+    return {
+      x: (clientX - rect.left) * (canvas.width / rect.width),
+      y: (clientY - rect.top) * (canvas.height / rect.height),
+    };
+  };
 
-        overlayCtx.putImageData(imageData, 0, 0);
-        ctx.drawImage(overlayCanvas, 0, 0);
-    }, []);
+  const configureStroke = (
+    ctx: CanvasRenderingContext2D,
+    operation: GlobalCompositeOperation,
+  ) => {
+    ctx.lineWidth = brushSize;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.globalCompositeOperation = operation;
+  };
 
+  const strokeMask = (start: CanvasPoint, end: CanvasPoint) => {
+    const ctx = maskCanvasRef.current?.getContext("2d");
+    if (!ctx) return;
 
-    // initial image load, initialize mask canvas, layout canvas
-    useEffect(() => {
-        if (!image) return;
+    const isBrush = selectedTool === ToolType.BRUSH;
+    const isEraser = selectedTool === ToolType.ERASER;
+    if (!isBrush && !isEraser) return;
 
-        const img = new Image();
-        img.src = image;
+    configureStroke(ctx, isBrush ? "destination-out" : "source-over");
+    ctx.strokeStyle = "black";
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
+    ctx.globalCompositeOperation = "source-over";
+  };
 
-        img.onload = () => {
-            const canvas = canvasRef.current;
-            if (!canvas) return;
+  const strokeOverlay = (start: CanvasPoint, end: CanvasPoint) => {
+    const ctx = overlayCanvasRef.current?.getContext("2d");
+    if (!ctx) return;
 
-            imgRef.current = img;
+    const isBrush = selectedTool === ToolType.BRUSH;
+    const isEraser = selectedTool === ToolType.ERASER;
+    if (!isBrush && !isEraser) return;
 
-            canvas.width = img.naturalWidth;
-            canvas.height = img.naturalHeight;
+    configureStroke(ctx, isBrush ? "source-over" : "destination-out");
+    ctx.strokeStyle = HIGHLIGHT_COLOR;
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
+    ctx.globalCompositeOperation = "source-over";
+  };
 
-            // prepare initial mask
-            maskCanvasRef.current =
-                document.createElement("canvas");
+  const persistMask = () => {
+    const maskCanvas = maskCanvasRef.current;
+    const imageAtRequest = image;
+    if (!maskCanvas || !imageAtRequest) return;
 
-            maskCanvasRef.current.width = img.naturalWidth;
-            maskCanvasRef.current.height = img.naturalHeight;
+    maskCanvas.toBlob((blob) => {
+      if (
+        blob &&
+        useEditorStore.getState().image === imageAtRequest
+      ) {
+        setMask(blob);
+      }
+    }, "image/png");
+  };
 
-            const maskCtx =
-                maskCanvasRef.current.getContext("2d");
+  const clearRectanglePreview = () => {
+    const canvas = previewCanvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (canvas && ctx) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  };
 
-            if (maskCtx) {
-                maskCtx.fillStyle = "black";
-                maskCtx.fillRect(
-                    0,
-                    0,
-                    maskCanvasRef.current.width,
-                    maskCanvasRef.current.height,
-                );
-            }
+  const startDrawing = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (selectedTool === ToolType.MOVE) return;
 
-            // create overlay canvas (temp)
-            overlayCanvasRef.current =
-                document.createElement("canvas");
+    e.preventDefault();
+    const pos = getPointerPos(e.clientX, e.clientY);
+    startPosRef.current = pos;
+    isDrawingRef.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
 
-            overlayCanvasRef.current.width = img.naturalWidth;
-            overlayCanvasRef.current.height = img.naturalHeight;
+    if (selectedTool === ToolType.BRUSH || selectedTool === ToolType.ERASER) {
+      strokeMask(pos, pos);
+      strokeOverlay(pos, pos);
+    }
+  };
 
-            draw();
-        };
-    }, [image, draw]);
+  const drawMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!isDrawingRef.current || !startPosRef.current) return;
 
-    const startDrawing = (e: React.PointerEvent) => {
-        if (selectedTool === ToolType.MOVE) return;
+    e.preventDefault();
 
-        e.preventDefault();
+    if (selectedTool === ToolType.BRUSH || selectedTool === ToolType.ERASER) {
+      let previous = startPosRef.current;
+      const coalesced = e.nativeEvent.getCoalescedEvents?.() ?? [e.nativeEvent];
 
-        if (!canvasRef.current) return;
+      for (const pointerEvent of coalesced) {
+        const current = getPointerPos(pointerEvent.clientX, pointerEvent.clientY);
+        strokeMask(previous, current);
+        strokeOverlay(previous, current);
+        previous = current;
+      }
 
-        const pos = getPointerPos(e);
-        startPosRef.current = pos;
-        isDrawingRef.current = true;
-        e.currentTarget.setPointerCapture(e.pointerId);
-
-        if (
-            selectedTool === ToolType.BRUSH ||
-            selectedTool === ToolType.ERASER
-        ) {
-            updateMask(pos, pos);
-            draw();
-        }
+      startPosRef.current = previous;
+      return;
     }
 
-    const updateMask = (start: Point, end: Point) => {
-        if (!maskCanvasRef.current) return;
+    if (selectedTool === ToolType.RECTANGLE) {
+      const previewCanvas = previewCanvasRef.current;
+      const ctx = previewCanvas?.getContext("2d");
+      if (!previewCanvas || !ctx) return;
 
-        const ctx = maskCanvasRef.current.getContext("2d");
-        if (!ctx) return;
+      const current = getPointerPos(e.clientX, e.clientY);
+      const start = startPosRef.current;
+      ctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+      ctx.fillStyle = HIGHLIGHT_COLOR;
+      ctx.fillRect(
+        start.x,
+        start.y,
+        current.x - start.x,
+        current.y - start.y,
+      );
+    }
+  };
 
-        ctx.lineWidth = brushSize;
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
+  const endDrawing = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!isDrawingRef.current) return;
 
-        if (selectedTool !== ToolType.BRUSH && selectedTool !== ToolType.ERASER) {
-            return;
+    isDrawingRef.current = false;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+
+    if (selectedTool === ToolType.RECTANGLE) {
+      const start = startPosRef.current;
+      if (start) {
+        const end = getPointerPos(e.clientX, e.clientY);
+        const width = end.x - start.x;
+        const height = end.y - start.y;
+
+        if (Math.abs(width) > 0 && Math.abs(height) > 0) {
+          const maskCtx = maskCanvasRef.current?.getContext("2d");
+          if (maskCtx) {
+            maskCtx.globalCompositeOperation = "destination-out";
+            maskCtx.fillRect(start.x, start.y, width, height);
+            maskCtx.globalCompositeOperation = "source-over";
+          }
+
+          const overlayCtx = overlayCanvasRef.current?.getContext("2d");
+          if (overlayCtx) {
+            overlayCtx.fillStyle = HIGHLIGHT_COLOR;
+            overlayCtx.fillRect(start.x, start.y, width, height);
+          }
         }
+      }
 
-        ctx.globalCompositeOperation =
-            selectedTool === ToolType.BRUSH ? "destination-out" : "source-over";
-        ctx.strokeStyle = "black";
+      clearRectanglePreview();
+    }
 
-        ctx.beginPath();
-        ctx.moveTo(start.x, start.y);
-        ctx.lineTo(end.x, end.y);
-        ctx.stroke();
-        ctx.globalCompositeOperation = "source-over";
-    };
+    persistMask();
+    startPosRef.current = null;
+  };
 
-    const getPointerPos = (e: React.PointerEvent) => {
-        if (!canvasRef.current) return { x: 0, y: 0 };
+  const cancelDrawing = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!isDrawingRef.current) return;
 
-        const rect = canvasRef.current.getBoundingClientRect();
-        const x =
-            (e.clientX - rect.left) *
-            (canvasRef.current.width / rect.width);
-        const y =
-            (e.clientY - rect.top) *
-            (canvasRef.current.height / rect.height);
+    isDrawingRef.current = false;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
 
-        return { x, y };
-    };
+    clearRectanglePreview();
 
-    const drawMove = (e: React.PointerEvent) => {
-        if (
-            !isDrawingRef.current ||
-            !canvasRef.current ||
-            !startPosRef.current
-        )
-            return;
+    if (selectedTool === ToolType.BRUSH || selectedTool === ToolType.ERASER) {
+      persistMask();
+    }
 
-        const startPos = startPosRef.current;
-        if (!startPos) return;
+    startPosRef.current = null;
+  };
 
-        e.preventDefault();
-
-        const currentPos = getPointerPos(e);
-
-        if (
-            selectedTool === ToolType.BRUSH ||
-            selectedTool === ToolType.ERASER
-        ) {
-            updateMask(startPos, currentPos);
-            startPosRef.current = currentPos;
-
-            draw();
-        } else if (selectedTool === ToolType.RECTANGLE) {
-            draw();
-            const ctx = canvasRef.current.getContext("2d");
-            if (ctx) {
-                ctx.save();
-
-                const w = currentPos.x - startPos.x;
-                const h = currentPos.y - startPos.y;
-
-                ctx.fillStyle = "rgba(255, 0, 0, 0.4)";
-                ctx.fillRect(startPos.x, startPos.y, w, h);
-
-                ctx.restore();
-            }
-        }
-    };
-
-
-    const endDrawing = (e: React.PointerEvent) => {
-        if (!isDrawingRef.current) return;
-
-        isDrawingRef.current = false;
-        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-            e.currentTarget.releasePointerCapture(e.pointerId);
-        }
-
-        if (selectedTool === ToolType.RECTANGLE) {
-            const endPos = getPointerPos(e);
-            const startPos = startPosRef.current;
-            if (!startPos) return;
-
-            const ctx = maskCanvasRef.current?.getContext("2d");
-            if (ctx) {
-                ctx.globalCompositeOperation = "destination-out";
-                ctx.fillStyle = "black";
-
-                const w = endPos.x - startPos.x;
-                const h = endPos.y - startPos.y;
-
-                if (Math.abs(w) > 0 && Math.abs(h) > 0) {
-                    ctx.fillRect(startPos.x, startPos.y, w, h);
-                }
-
-                ctx.globalCompositeOperation = "source-over";
-            }
-        }
-
-        if (maskCanvasRef.current) {
-            setMask(maskCanvasRef.current.toDataURL("image/png"));
-        }
-
-        startPosRef.current = null;
-    };
-
-    const cancelDrawing = (e: React.PointerEvent) => {
-        if (!isDrawingRef.current) return;
-
-        isDrawingRef.current = false;
-        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-            e.currentTarget.releasePointerCapture(e.pointerId);
-        }
-
-        if (maskCanvasRef.current) {
-            setMask(maskCanvasRef.current.toDataURL("image/png"));
-        }
-
-        startPosRef.current = null;
-        draw();
-    };
-
-    return (
-        <div className="w-full h-full flex items-center justify-center">
-            <canvas
-                onPointerDown={startDrawing}
-                onPointerMove={drawMove}
-                onPointerUp={endDrawing}
-                onPointerCancel={cancelDrawing}
-                ref={canvasRef}
-                className="max-w-full max-h-full touch-none"
-            />
-        </div>
-    )
+  return (
+    <div className="w-full h-full flex items-center justify-center">
+      <div className="inline-grid max-w-full max-h-full">
+        <canvas
+          ref={canvasRef}
+          className="col-start-1 row-start-1 max-w-full max-h-full"
+        />
+        <canvas
+          ref={overlayCanvasRef}
+          onPointerDown={startDrawing}
+          onPointerMove={drawMove}
+          onPointerUp={endDrawing}
+          onPointerCancel={cancelDrawing}
+          aria-label="Image edit mask canvas"
+          className="col-start-1 row-start-1 max-w-full max-h-full touch-none"
+        />
+        <canvas
+          ref={previewCanvasRef}
+          className="col-start-1 row-start-1 max-w-full max-h-full pointer-events-none"
+        />
+      </div>
+    </div>
+  );
 }
 
-export default ImageEditor
+export default ImageEditor;

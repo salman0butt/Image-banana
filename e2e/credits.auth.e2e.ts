@@ -200,10 +200,17 @@ test("post-charge edit failure is refunded and appears in account ledger", async
   await expect(creditsResponse.json()).resolves.toEqual({ balance: SIGNUP_CREDITS });
 
   await page.goto("/account");
-  await expect(page.getByText("Generation Charge", { exact: true })).toBeVisible();
-  await expect(page.getByText("Generation Refund", { exact: true })).toBeVisible();
-  await expect(page.getByText("Balance 23", { exact: true })).toBeVisible();
-  await expect(page.getByText("Balance 25", { exact: true })).toBeVisible();
+  const chargeEntry = page
+    .getByRole("listitem")
+    .filter({ hasText: "Generation Charge" });
+  await expect(chargeEntry).toContainText("-2");
+  await expect(chargeEntry).toContainText("Balance 23");
+
+  const refundEntry = page
+    .getByRole("listitem")
+    .filter({ hasText: "Generation Refund" });
+  await expect(refundEntry).toContainText("+2");
+  await expect(refundEntry).toContainText("Balance 25");
 });
 
 test("authenticated editor cancellation aborts the active browser request", async ({

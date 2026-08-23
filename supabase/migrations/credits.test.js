@@ -27,12 +27,36 @@ test("credit tables enable RLS and expose only own rows", () => {
   ).toBe(false);
 });
 
-test("browser roles cannot mutate credit tables directly", () => {
+test("authenticated users receive explicit read privileges while writes stay revoked", () => {
   expect(migration).toContain(
-    "revoke insert, update, delete, truncate on table public.credit_wallets from anon, authenticated",
+    "revoke all on table public.credit_wallets from anon, authenticated",
   );
   expect(migration).toContain(
-    "revoke insert, update, delete, truncate on table public.credit_ledger from anon, authenticated",
+    "revoke all on table public.credit_ledger from anon, authenticated",
+  );
+  expect(migration).toContain(
+    "grant select on table public.credit_wallets to authenticated",
+  );
+  expect(migration).toContain(
+    "grant select on table public.credit_ledger to authenticated",
+  );
+  expect(migration).not.toContain(
+    "grant insert on table public.credit_wallets to authenticated",
+  );
+  expect(migration).not.toContain(
+    "grant update on table public.credit_wallets to authenticated",
+  );
+  expect(migration).not.toContain(
+    "grant delete on table public.credit_wallets to authenticated",
+  );
+  expect(migration).not.toContain(
+    "grant insert on table public.credit_ledger to authenticated",
+  );
+  expect(migration).not.toContain(
+    "grant update on table public.credit_ledger to authenticated",
+  );
+  expect(migration).not.toContain(
+    "grant delete on table public.credit_ledger to authenticated",
   );
 });
 

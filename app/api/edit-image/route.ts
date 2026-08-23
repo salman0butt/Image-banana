@@ -140,7 +140,18 @@ async function uploadMask(
   signal: AbortSignal,
 ): Promise<string> {
   const buffer = Buffer.from(await mask.arrayBuffer());
-  const metadata = await sharp(buffer, { limitInputPixels: MAX_IMAGE_PIXELS }).metadata();
+  const metadata = await (async () => {
+    try {
+      return await sharp(buffer, {
+        limitInputPixels: MAX_IMAGE_PIXELS,
+      }).metadata();
+    } catch {
+      throw new ApiRequestError(
+        "The mask must be a valid PNG image with an alpha channel.",
+        400,
+      );
+    }
+  })();
 
   if (
     metadata.format !== "png" ||

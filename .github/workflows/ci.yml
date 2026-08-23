@@ -16,7 +16,7 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Checkout PR branch
         uses: actions/checkout@v4
@@ -70,6 +70,12 @@ jobs:
 
       - name: Unit tests
         run: pnpm test
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Browser E2E
+        run: pnpm e2e
 
       - name: Production build
         run: pnpm build

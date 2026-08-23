@@ -46,10 +46,14 @@ where reason = 'generation_refund';
 alter table public.credit_wallets enable row level security;
 alter table public.credit_ledger enable row level security;
 
--- Defense in depth: even if a future RLS policy is accidentally broadened,
--- browser roles do not receive direct mutation privileges on credit state.
-revoke insert, update, delete, truncate on table public.credit_wallets from anon, authenticated;
-revoke insert, update, delete, truncate on table public.credit_ledger from anon, authenticated;
+-- Explicit table privileges are required in addition to RLS. Anonymous clients
+-- receive no table access. Authenticated clients may SELECT, with the policies
+-- below restricting those reads to rows owned by auth.uid(). All mutations stay
+-- behind the service-role-only SECURITY DEFINER functions.
+revoke all on table public.credit_wallets from anon, authenticated;
+revoke all on table public.credit_ledger from anon, authenticated;
+grant select on table public.credit_wallets to authenticated;
+grant select on table public.credit_ledger to authenticated;
 
 drop trigger if exists credit_wallets_set_updated_at on public.credit_wallets;
 create trigger credit_wallets_set_updated_at

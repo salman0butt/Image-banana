@@ -59,10 +59,10 @@ export default function Home() {
     setErrorMessage(null);
 
     try {
-      const imageRef = await uploadImage(file, controller.signal);
+      const uploaded = await uploadImage(file, controller.signal);
 
       if (sequence === uploadSequenceRef.current && !controller.signal.aborted) {
-        attachImageRef(previewUrl, imageRef);
+        attachImageRef(previewUrl, uploaded.imageRef, uploaded.assetId);
       }
     } catch (error) {
       if (!isAbortError(error) && sequence === uploadSequenceRef.current) {

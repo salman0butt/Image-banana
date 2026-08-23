@@ -45,16 +45,18 @@ test("protected account routes redirect unauthenticated users to login", async (
   ).toBeVisible();
 });
 
-test("protected auth API returns a structured unauthorized response", async ({
+test("protected APIs return a structured unauthorized response", async ({
   request,
 }) => {
-  const response = await request.get("/api/auth/me");
+  for (const path of ["/api/auth/me", "/api/credits", "/api/models"]) {
+    const response = await request.get(path);
 
-  expect(response.status()).toBe(401);
-  await expect(response.json()).resolves.toEqual({
-    error: {
-      code: "UNAUTHORIZED",
-      message: "Authentication required.",
-    },
-  });
+    expect(response.status()).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "UNAUTHORIZED",
+        message: "Authentication required.",
+      },
+    });
+  }
 });

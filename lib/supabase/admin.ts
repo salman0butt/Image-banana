@@ -1,8 +1,14 @@
-import "server-only";
-
 import { createClient } from "@supabase/supabase-js";
 
+function assertServerRuntime() {
+  if (typeof window !== "undefined") {
+    throw new Error("The Supabase admin client is server-only.");
+  }
+}
+
 export function createAdminClient() {
+  assertServerRuntime();
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 

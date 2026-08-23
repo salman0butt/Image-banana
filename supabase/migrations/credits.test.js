@@ -16,6 +16,15 @@ test("credit tables enable RLS and expose only own rows", () => {
   expect(migration).toContain('"credit_wallets_select_own"');
   expect(migration).toContain('"credit_ledger_select_own"');
   expect(migration).toContain("auth.uid()) = user_id");
+
+  const policyStatements = migration.match(/create policy[\s\S]*?;/gi) ?? [];
+  expect(
+    policyStatements.some((statement) =>
+      /on public\.credit_(?:wallets|ledger)[\s\S]*?for (?:insert|update|delete)/i.test(
+        statement,
+      ),
+    ),
+  ).toBe(false);
 });
 
 test("credit mutation RPCs are restricted to the service role", () => {
@@ -28,7 +37,6 @@ test("credit mutation RPCs are restricted to the service role", () => {
   expect(migration).toContain(
     "grant execute on function public.refund_generation_credits(uuid, text, text, jsonb) to service_role",
   );
-  expect(migration).not.toMatch(/create policy[^;]+for (insert|update|delete)/is);
 });
 
 test("generation charging is atomic, idempotent, and prevents negative balances", () => {

@@ -9,7 +9,6 @@ import {
   Paperclip,
   Sparkles,
   Square,
-  Upload,
   XCircle,
 } from "lucide-react";
 

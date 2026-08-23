@@ -11,6 +11,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export const IMAGE_ASSET_BUCKET = "user-images";
 const SIGNED_IMAGE_URL_SECONDS = 60 * 60;
 const OPENAI_REFRESH_SAFETY_SECONDS = 5 * 60;
+const JOB_COMPLETION_ATTEMPTS = 3;
 
 type ImageAssetRow = {
   id: string;
@@ -40,16 +41,28 @@ function isOpenAIFileFresh(asset: ImageAssetRow): boolean {
   );
 }
 
-async function createSignedAssetUrl(storagePath: string): Promise<string> {
-  const admin = createAdminClient();
-  const { data, error } = await admin.storage
-    .from(IMAGE_ASSET_BUCKET)
-    .createSignedUrl(storagePath, SIGNED_IMAGE_URL_SECONDS);
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
 
-  if (error || !data?.signedUrl) {
-    throw new Error(`Unable to sign stored image URL: ${error?.message ?? "unknown error"}`);
+function safeJobErrorMessage(
+  status: "failed" | "cancelled",
+  errorCode: string,
+  errorMessage: string,
+): string {
+  if (status === "cancelled" || errorCode === "request_cancelled") {
+    return "Generation cancelled.";
   }
-  return data.signedUrl;
+  if (errorCode === "insufficient_credits") {
+    return "Insufficient credits for this generation.";
+  }
+  if (errorCode === "credit_reservation_failed") {
+    return "Unable to reserve generation credits.";
+  }
+  if (errorCode === "invalid_edit_request") {
+    return errorMessage.slice(0, 500);
+  }
+  return "Image generation failed.";
 }
 
 async function persistAsset({
@@ -107,7 +120,9 @@ async function persistAsset({
 
   if (error || !data) {
     await admin.storage.from(IMAGE_ASSET_BUCKET).remove([storagePath]);
-    throw new Error(`Unable to record ${kind} image asset: ${error?.message ?? "unknown error"}`);
+    throw new Error(
+      `Unable to record ${kind} image asset: ${error?.message ?? "unknown error"}`,
+    );
   }
 
   return data as ImageAssetRow;
@@ -164,7 +179,7 @@ export async function openEditableAsset({
   client: OpenAI;
   apiKey: string;
   signal?: AbortSignal;
-}): Promise<{ assetId: string; imageUrl: string; imageRef: string }> {
+}): Promise<{ assetId: string; imageRef: string }> {
   let asset = await getUserAsset(userId, assetId);
   if (!asset) throw new Error("The image asset was not found.");
 
@@ -175,10 +190,16 @@ export async function openEditableAsset({
       .download(asset.storage_path);
 
     if (downloadError || !stored) {
-      throw new Error(`Unable to read stored image: ${downloadError?.message ?? "unknown error"}`);
+      throw new Error(
+        `Unable to read stored image: ${downloadError?.message ?? "unknown error"}`,
+      );
     }
 
     const buffer = Buffer.from(await stored.arrayBuffer());
+    if (!buffer.length) {
+      throw new Error("The stored image is empty.");
+    }
+
     const uploaded = await client.files.create(
       {
         file: await toFile(buffer, `${asset.kind}-${asset.id}.png`, {
@@ -207,7 +228,14 @@ export async function openEditableAsset({
       .single();
 
     if (error || !data) {
-      throw new Error(`Unable to refresh editable image reference: ${error?.message ?? "unknown error"}`);
+      try {
+        await client.files.delete(uploaded.id);
+      } catch (cleanupError) {
+        console.warn("Unable to clean up refreshed OpenAI file:", cleanupError);
+      }
+      throw new Error(
+        `Unable to refresh editable image reference: ${error?.message ?? "unknown error"}`,
+      );
     }
     asset = data as ImageAssetRow;
   }
@@ -218,8 +246,12 @@ export async function openEditableAsset({
 
   return {
     assetId: asset.id,
-    imageUrl: await createSignedAssetUrl(asset.storage_path),
-    imageRef: createImageReference(apiKey, asset.openai_file_id, asset.width, asset.height),
+    imageRef: createImageReference(
+      apiKey,
+      asset.openai_file_id,
+      asset.width,
+      asset.height,
+    ),
   };
 }
 
@@ -260,19 +292,31 @@ export async function completeGenerationJob({
   userId: string;
   outputAssetId: string;
 }): Promise<void> {
-  const admin = createAdminClient();
-  const { error } = await admin
-    .from("generation_jobs")
-    .update({
-      output_asset_id: outputAssetId,
-      status: "succeeded",
-      completed_at: new Date().toISOString(),
-      error_code: null,
-      error_message: null,
-    })
-    .eq("id", id)
-    .eq("user_id", userId);
-  if (error) throw new Error(`Unable to complete generation job: ${error.message}`);
+  let lastMessage = "unknown error";
+
+  for (let attempt = 1; attempt <= JOB_COMPLETION_ATTEMPTS; attempt += 1) {
+    const admin = createAdminClient();
+    const { error } = await admin
+      .from("generation_jobs")
+      .update({
+        output_asset_id: outputAssetId,
+        status: "succeeded",
+        completed_at: new Date().toISOString(),
+        error_code: null,
+        error_message: null,
+      })
+      .eq("id", id)
+      .eq("user_id", userId);
+
+    if (!error) return;
+    lastMessage = error.message;
+
+    if (attempt < JOB_COMPLETION_ATTEMPTS) {
+      await delay(100 * attempt);
+    }
+  }
+
+  throw new Error(`Unable to complete generation job: ${lastMessage}`);
 }
 
 export async function failGenerationJob({
@@ -295,7 +339,7 @@ export async function failGenerationJob({
       status,
       completed_at: new Date().toISOString(),
       error_code: errorCode.slice(0, 100),
-      error_message: errorMessage.slice(0, 500),
+      error_message: safeJobErrorMessage(status, errorCode, errorMessage),
     })
     .eq("id", id)
     .eq("user_id", userId);
@@ -312,7 +356,9 @@ export async function createSignedUrlsForAssets(
     .createSignedUrls(storagePaths, SIGNED_IMAGE_URL_SECONDS);
 
   if (error || !data) {
-    throw new Error(`Unable to sign history images: ${error?.message ?? "unknown error"}`);
+    throw new Error(
+      `Unable to sign history images: ${error?.message ?? "unknown error"}`,
+    );
   }
 
   const urls = new Map<string, string>();

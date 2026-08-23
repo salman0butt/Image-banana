@@ -15,24 +15,24 @@ export function Navbar() {
     showHistory,
     history,
     image,
-    toggleHistory,
   } = useEditorStore();
 
   const handleUpload = () => {
     const input = document.getElementById("image-upload-input");
-    if (input instanceof HTMLInputElement) {
-      input.click();
-    }
+    if (input instanceof HTMLInputElement) input.click();
   };
 
   const handleDownload = () => {
     if (!image) return;
-
     const link = document.createElement("a");
     link.download = `imagebanana-${Date.now()}.png`;
     link.href = image;
     link.click();
     link.remove();
+  };
+
+  const toggleHistory = () => {
+    useEditorStore.setState((state) => ({ showHistory: !state.showHistory }));
   };
 
   return (
@@ -123,7 +123,6 @@ export function Navbar() {
             variant="ghost"
             size="icon"
             onClick={toggleHistory}
-            disabled={history.length === 0}
             className={cn(
               "h-9 w-9 transition-all duration-200 bg-zinc-800 text-zinc-100 border border-zinc-700",
             )}

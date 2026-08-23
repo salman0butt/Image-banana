@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { expect, test, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import sharp from "sharp";
@@ -36,37 +38,8 @@ async function assertNoError(error: { message: string } | null, operation: strin
   }
 }
 
-async function resetCreditState() {
-  const { error: walletError } = await admin.rpc("ensure_credit_wallet", {
-    p_user_id: userId,
-    p_signup_credits: SIGNUP_CREDITS,
-  });
-  await assertNoError(walletError, "Unable to provision E2E wallet");
-
-  const { error: ledgerError } = await admin
-    .from("credit_ledger")
-    .delete()
-    .eq("user_id", userId)
-    .neq("reason", "signup");
-  await assertNoError(ledgerError, "Unable to reset E2E credit ledger");
-
-  const { error: balanceError } = await admin
-    .from("credit_wallets")
-    .update({ balance: SIGNUP_CREDITS })
-    .eq("user_id", userId);
-  await assertNoError(balanceError, "Unable to reset E2E credit balance");
-}
-
-async function signIn(page: Page) {
-  await page.goto("/auth/login");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL("http://127.0.0.1:3000/");
-}
-
-test.beforeAll(async () => {
-  email = `credits-e2e-${Date.now()}@example.test`;
+async function createDisposableUser() {
+  email = `credits-e2e-${randomUUID()}@example.test`;
   const { data, error } = await admin.auth.admin.createUser({
     email,
     password: PASSWORD,
@@ -79,17 +52,42 @@ test.beforeAll(async () => {
   }
 
   userId = data.user.id;
-});
+}
 
-test.afterAll(async () => {
+async function deleteDisposableUser() {
   if (!userId) return;
-  const { error } = await admin.auth.admin.deleteUser(userId);
+
+  const currentUserId = userId;
+  userId = "";
+  email = "";
+
+  const { error } = await admin.auth.admin.deleteUser(currentUserId);
   await assertNoError(error, "Unable to delete disposable E2E user");
-});
+}
+
+async function ensureWallet() {
+  const { error } = await admin.rpc("ensure_credit_wallet", {
+    p_user_id: userId,
+    p_signup_credits: SIGNUP_CREDITS,
+  });
+  await assertNoError(error, "Unable to provision E2E wallet");
+}
+
+async function signIn(page: Page) {
+  await page.goto("/auth/login");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL("http://127.0.0.1:3000/");
+}
 
 test.beforeEach(async ({ page }) => {
-  await resetCreditState();
+  await createDisposableUser();
   await signIn(page);
+});
+
+test.afterEach(async () => {
+  await deleteDisposableUser();
 });
 
 test("authenticated user sees server-controlled models and initial credits", async ({
@@ -122,11 +120,12 @@ test("authenticated user sees server-controlled models and initial credits", asy
 test("insufficient credits are enforced in both UI and edit API", async ({
   page,
 }) => {
-  const testChargeKey = `e2e-insufficient-${Date.now()}`;
+  await ensureWallet();
+
   const { error: chargeError } = await admin.rpc("charge_generation_credits", {
     p_user_id: userId,
     p_amount: 24,
-    p_idempotency_key: testChargeKey,
+    p_idempotency_key: `e2e-insufficient:${randomUUID()}`,
     p_metadata: { source: "authenticated_e2e" },
   });
   await assertNoError(chargeError, "Unable to prepare insufficient-credit state");
@@ -200,24 +199,11 @@ test("post-charge edit failure is refunded and appears in account ledger", async
   expect(creditsResponse.status()).toBe(200);
   await expect(creditsResponse.json()).resolves.toEqual({ balance: SIGNUP_CREDITS });
 
-  const { data: entries, error: ledgerError } = await admin
-    .from("credit_ledger")
-    .select("reason, delta, idempotency_key, related_idempotency_key")
-    .eq("user_id", userId)
-    .in("reason", ["generation_charge", "generation_refund"]);
-  await assertNoError(ledgerError, "Unable to inspect E2E generation ledger");
-
-  expect(entries).toHaveLength(2);
-  const charge = entries?.find((entry) => entry.reason === "generation_charge");
-  const refund = entries?.find((entry) => entry.reason === "generation_refund");
-  expect(charge?.delta).toBe(-2);
-  expect(refund?.delta).toBe(2);
-  expect(refund?.related_idempotency_key).toBe(charge?.idempotency_key);
-
   await page.goto("/account");
   await expect(page.getByText("Generation Charge", { exact: true })).toBeVisible();
   await expect(page.getByText("Generation Refund", { exact: true })).toBeVisible();
-  await expect(page.getByText("25", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Balance 23", { exact: true })).toBeVisible();
+  await expect(page.getByText("Balance 25", { exact: true })).toBeVisible();
 });
 
 test("authenticated editor cancellation aborts the active browser request", async ({

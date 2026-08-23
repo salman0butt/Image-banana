@@ -135,7 +135,7 @@ export const RightSidebar = () => {
   return (
     <aside
       className="flex h-full w-64 flex-col shrink-0 border-l border-zinc-800 bg-zinc-950/50 z-20 overflow-hidden"
-      aria-label="Generation history"
+      aria-label="History sidebar"
     >
       <div className="flex-1 min-h-0 w-full">
         <ScrollArea className="h-full w-full">

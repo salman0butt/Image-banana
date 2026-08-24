@@ -1,26 +1,22 @@
-import { afterEach, expect, test } from "bun:test";
-import { createImageReference } from "../../../lib/image-reference";
-import { POST } from "./route";
+import { expect, test } from "bun:test";
+import {
+  assertEditRequestEnvelope,
+  readEditImageRequest,
+} from "./route";
 
-const originalApiKey = process.env.OPENAI_API_KEY;
+test("rejects an edit request without a declared content length", () => {
+  const request = new Request("http://localhost/api/edit-image", {
+    method: "POST",
+  });
 
-afterEach(() => {
-  if (originalApiKey === undefined) {
-    delete process.env.OPENAI_API_KEY;
-  } else {
-    process.env.OPENAI_API_KEY = originalApiKey;
-  }
+  expect(() => assertEditRequestEnvelope(request)).toThrow(
+    "Content-Length header is required.",
+  );
 });
 
-test("returns 400 for a malformed mask before calling OpenAI", async () => {
-  const apiKey = "test-openai-api-key";
-  process.env.OPENAI_API_KEY = apiKey;
-
+test("rejects a malformed mask before calling OpenAI", async () => {
   const formData = new FormData();
-  formData.set(
-    "imageRef",
-    createImageReference(apiKey, "file_test_source", 32, 32),
-  );
+  formData.set("imageRef", "signed-source-reference");
   formData.set("prompt", "Change the selected area");
   formData.set(
     "mask",
@@ -29,16 +25,12 @@ test("returns 400 for a malformed mask before calling OpenAI", async () => {
     }),
   );
 
-  const response = await POST(
-    new Request("http://localhost/api/edit-image", {
-      method: "POST",
-      headers: { "x-forwarded-for": "qa-malformed-mask" },
-      body: formData,
-    }),
-  );
-
-  expect(response.status).toBe(400);
-  expect(await response.json()).toEqual({
-    error: "The mask must be a valid PNG image with an alpha channel.",
+  const request = new Request("http://localhost/api/edit-image", {
+    method: "POST",
+    body: formData,
   });
+
+  await expect(readEditImageRequest(request)).rejects.toThrow(
+    "The mask must be a valid PNG image with an alpha channel.",
+  );
 });

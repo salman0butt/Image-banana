@@ -29,6 +29,10 @@ test("auth handoff links preserve the requested local destination", async ({
   await expect(
     page.getByRole("link", { name: "Create account" }),
   ).toHaveAttribute("href", "/auth/register?next=%2Faccount");
+  await expect(page.getByRole("link", { name: "Start free" })).toHaveAttribute(
+    "href",
+    "/auth/register?next=%2Faccount",
+  );
 
   await page.goto("/auth/register?next=%2Faccount");
 
@@ -36,6 +40,55 @@ test("auth handoff links preserve the requested local destination", async ({
     "href",
     "/auth/login?next=%2Faccount",
   );
+  await expect(page.getByRole("link", { name: "Log in" })).toHaveAttribute(
+    "href",
+    "/auth/login?next=%2Faccount",
+  );
+});
+
+test("login and registration use the branded responsive auth shell", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/auth/login");
+
+  await expect(
+    page.getByRole("navigation", { name: "Authentication page navigation" }),
+  ).toBeVisible();
+  await expect(
+    page.getByAltText(
+      "Original yellow lounge chair studio scene used in the Image's Banana editor",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("navigation", { name: "Authentication footer" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "Back to homepage" })).toHaveAttribute(
+    "href",
+    "/",
+  );
+
+  for (const width of [320, 375, 390, 430, 768, 1024, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    const hasHorizontalOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth,
+    );
+    expect(hasHorizontalOverflow, `login horizontal overflow at ${width}px`).toBe(
+      false,
+    );
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/auth/register");
+  await expect(
+    page.getByRole("heading", { name: "Create your account" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Display name")).toBeVisible();
+  await expect(page.getByLabel("Email")).toBeVisible();
+  await expect(page.getByLabel("Password")).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth),
+  ).toBe(false);
 });
 
 test("registration shows a controlled setup error when Supabase is not configured", async ({

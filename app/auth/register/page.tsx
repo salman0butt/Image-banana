@@ -29,7 +29,7 @@ export default async function RegisterPage({
       title="Create your account"
       description="Set up your workspace, receive your configured signup credits, and start editing with AI in minutes."
       alternatePrompt="Already have an account?"
-      alternateLabel="Sign in"
+      alternateLabel="Log in"
       alternateHref={loginHref}
     >
       <form action={signUp} className="space-y-5">

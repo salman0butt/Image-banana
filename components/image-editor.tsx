@@ -9,6 +9,20 @@ type CanvasPoint = {
 };
 
 const HIGHLIGHT_COLOR = "rgba(255, 0, 0, 0.4)";
+const MAX_EDITOR_CANVAS_PIXELS = 4_000_000;
+
+function previewDimensions(width: number, height: number) {
+  const pixels = width * height;
+  if (pixels <= MAX_EDITOR_CANVAS_PIXELS) {
+    return { width, height };
+  }
+
+  const scale = Math.sqrt(MAX_EDITOR_CANVAS_PIXELS / pixels);
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
+}
 
 function ImageEditor() {
   const { image, selectedTool, brushSize, setMask, setMaskProcessing, setErrorMessage } =
@@ -47,16 +61,17 @@ function ImageEditor() {
       if (!canvas || !overlayCanvas || !previewCanvas) return;
 
       imgRef.current = img;
+      const preview = previewDimensions(img.naturalWidth, img.naturalHeight);
 
       for (const target of [canvas, overlayCanvas, previewCanvas]) {
-        target.width = img.naturalWidth;
-        target.height = img.naturalHeight;
+        target.width = preview.width;
+        target.height = preview.height;
       }
 
       const ctx = canvas.getContext("2d");
       if (ctx) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0);
+        ctx.drawImage(img, 0, 0, preview.width, preview.height);
       }
 
       overlayCanvas.getContext("2d")?.clearRect(
@@ -73,8 +88,8 @@ function ImageEditor() {
       );
 
       const maskCanvas = document.createElement("canvas");
-      maskCanvas.width = img.naturalWidth;
-      maskCanvas.height = img.naturalHeight;
+      maskCanvas.width = preview.width;
+      maskCanvas.height = preview.height;
       maskCanvasRef.current = maskCanvas;
 
       const maskCtx = maskCanvas.getContext("2d");

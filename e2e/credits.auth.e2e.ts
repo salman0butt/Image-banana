@@ -4,24 +4,21 @@ import { expect, test, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import sharp from "sharp";
 
-import { createImageReference } from "@/lib/image-reference";
-
 const SIGNUP_CREDITS = 25;
-const OPENAI_E2E_API_KEY = "e2e-openai-api-key";
 const PASSWORD = "Credits-e2e-password-2026!";
+const IMAGE_BUCKET = "user-images";
 
-function requiredEnv(...names: string[]): string {
-  for (const name of names) {
-    const value = process.env[name]?.trim();
-    if (value) return value;
+function requiredEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`${name} is required for authenticated E2E tests.`);
   }
-
-  throw new Error(`${names.join(" or ")} is required for authenticated E2E tests.`);
+  return value;
 }
 
 const admin = createClient(
   requiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
-  requiredEnv("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SECRET_KEY"),
+  requiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
   {
     auth: {
       autoRefreshToken: false,
@@ -32,6 +29,7 @@ const admin = createClient(
 
 let userId = "";
 let email = "";
+let storagePaths: string[] = [];
 
 async function assertNoError(error: { message: string } | null, operation: string) {
   if (error) {
@@ -56,6 +54,12 @@ async function createDisposableUser() {
 }
 
 async function deleteDisposableUser() {
+  if (storagePaths.length) {
+    const { error } = await admin.storage.from(IMAGE_BUCKET).remove(storagePaths);
+    await assertNoError(error, "Unable to remove disposable E2E images");
+    storagePaths = [];
+  }
+
   if (!userId) return;
 
   const currentUserId = userId;
@@ -74,13 +78,61 @@ async function ensureWallet() {
   await assertNoError(error, "Unable to provision E2E wallet");
 }
 
+async function createStoredAsset({
+  kind = "source",
+  openAIFileId = `file_e2e_${randomUUID()}`,
+  parentAssetId = null,
+}: {
+  kind?: "source" | "generated";
+  openAIFileId?: string;
+  parentAssetId?: string | null;
+} = {}) {
+  const assetId = randomUUID();
+  const image = await sharp({
+    create: {
+      width: 2,
+      height: 2,
+      channels: 4,
+      background: { r: 255, g: 255, b: 255, alpha: 1 },
+    },
+  })
+    .png()
+    .toBuffer();
+  const storagePath = `${userId}/e2e/${assetId}.png`;
+
+  const { error: uploadError } = await admin.storage
+    .from(IMAGE_BUCKET)
+    .upload(storagePath, image, {
+      contentType: "image/png",
+      upsert: false,
+    });
+  await assertNoError(uploadError, "Unable to upload E2E image asset");
+  storagePaths.push(storagePath);
+
+  const { error: insertError } = await admin.from("image_assets").insert({
+    id: assetId,
+    user_id: userId,
+    kind,
+    storage_path: storagePath,
+    mime_type: "image/png",
+    byte_size: image.length,
+    width: 2,
+    height: 2,
+    openai_file_id: openAIFileId,
+    openai_expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    parent_asset_id: parentAssetId,
+  });
+  await assertNoError(insertError, "Unable to insert E2E image asset");
+
+  return { assetId, image };
+}
+
 async function signIn(page: Page) {
   await page.goto("/auth/login");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL("http://127.0.0.1:3000/editor");
-  await expect(page.getByRole("heading", { name: "Start Creating" })).toBeVisible();
+  await expect(page).toHaveURL("http://127.0.0.1:3000/");
 }
 
 test.beforeEach(async ({ page }) => {
@@ -90,19 +142,6 @@ test.beforeEach(async ({ page }) => {
 
 test.afterEach(async () => {
   await deleteDisposableUser();
-});
-
-test("authenticated homepage exposes editor and account actions", async ({ page }) => {
-  await page.goto("/");
-
-  await expect(page.getByRole("link", { name: "Open Editor" }).first()).toHaveAttribute(
-    "href",
-    "/editor",
-  );
-  await expect(page.getByRole("link", { name: "Account" }).first()).toHaveAttribute(
-    "href",
-    "/account",
-  );
 });
 
 test("authenticated user sees server-controlled models and initial credits", async ({
@@ -136,6 +175,9 @@ test("insufficient credits are enforced in both UI and edit API", async ({
   page,
 }) => {
   await ensureWallet();
+  const source = await createStoredAsset({
+    openAIFileId: "file_e2e_insufficient",
+  });
 
   const { error: chargeError } = await admin.rpc("charge_generation_credits", {
     p_user_id: userId,
@@ -154,12 +196,7 @@ test("insufficient credits are enforced in both UI and edit API", async ({
 
   const response = await page.request.post("/api/edit-image", {
     multipart: {
-      imageRef: createImageReference(
-        OPENAI_E2E_API_KEY,
-        "file_e2e_insufficient",
-        2,
-        2,
-      ),
+      sourceAssetId: source.assetId,
       prompt: "Make the image cinematic",
       modelId: "gpt-image-2-fast",
     },
@@ -176,38 +213,26 @@ test("insufficient credits are enforced in both UI and edit API", async ({
 test("post-charge edit failure is refunded and appears in account ledger", async ({
   page,
 }) => {
-  const mask = await sharp({
-    create: {
-      width: 1,
-      height: 1,
-      channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
-    },
-  })
-    .png()
-    .toBuffer();
+  const source = await createStoredAsset({
+    openAIFileId: "file_e2e_refund",
+  });
 
   const response = await page.request.post("/api/edit-image", {
     multipart: {
-      imageRef: createImageReference(
-        OPENAI_E2E_API_KEY,
-        "file_e2e_refund",
-        2,
-        2,
-      ),
+      sourceAssetId: source.assetId,
       prompt: "Change the selected area",
       modelId: "gpt-image-2-fast",
-      mask: {
-        name: "mask.png",
-        mimeType: "image/png",
-        buffer: mask,
+      referenceFile: {
+        name: "invalid-reference.bin",
+        mimeType: "application/octet-stream",
+        buffer: Buffer.from([1, 2, 3, 4]),
       },
     },
   });
 
   expect(response.status()).toBe(400);
   await expect(response.json()).resolves.toEqual({
-    error: "The mask and source image must have the same dimensions.",
+    error: "Reference file 1 must be a supported image or PDF.",
   });
 
   const creditsResponse = await page.request.get("/api/credits");
@@ -235,7 +260,10 @@ test("authenticated editor cancellation aborts the active browser request", asyn
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ imageRef: "e2e-browser-source-ref" }),
+      body: JSON.stringify({
+        imageRef: "e2e-browser-source-ref",
+        assetId: "11111111-1111-4111-8111-111111111111",
+      }),
     });
   });
 
@@ -291,4 +319,47 @@ test("authenticated editor cancellation aborts the active browser request", asyn
   await expect(cancelButton).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Generate · 2" })).toBeVisible();
   await expect(prompt).toHaveValue("Run a cancellable edit");
+});
+
+test("persistent generation history renders and reopens a saved output", async ({
+  page,
+}) => {
+  const source = await createStoredAsset({
+    openAIFileId: "file_e2e_history_source",
+  });
+  const output = await createStoredAsset({
+    kind: "generated",
+    openAIFileId: "file_e2e_history_output",
+    parentAssetId: source.assetId,
+  });
+  const prompt = "Turn this into a cinematic night scene";
+
+  const { error } = await admin.from("generation_jobs").insert({
+    id: randomUUID(),
+    user_id: userId,
+    source_asset_id: source.assetId,
+    output_asset_id: output.assetId,
+    model_id: "gpt-image-2-fast",
+    credit_cost: 2,
+    prompt,
+    status: "succeeded",
+    completed_at: new Date().toISOString(),
+  });
+  await assertNoError(error, "Unable to seed generation history");
+
+  await page.getByRole("button", { name: "Open generation history" }).click();
+  const historyPanel = page.getByRole("complementary", {
+    name: "History sidebar",
+  });
+  await expect(historyPanel).toBeVisible();
+  await expect(historyPanel.getByText(prompt)).toBeVisible();
+  await expect(historyPanel.getByText("gpt-image-2-fast")).toBeVisible();
+  await expect(historyPanel.getByText("Ready")).toBeVisible();
+
+  await historyPanel
+    .getByRole("button", { name: `Open saved generation: ${prompt}` })
+    .click();
+
+  await expect(page.getByLabel("Image edit instruction")).toHaveValue(prompt);
+  await expect(page.locator("canvas").first()).toBeVisible();
 });

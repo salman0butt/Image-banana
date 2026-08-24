@@ -123,12 +123,11 @@ export function Navbar() {
             variant="ghost"
             size="icon"
             onClick={toggleHistory}
-            disabled={history.length === 0}
             className={cn(
               "h-9 w-9 transition-all duration-200 bg-zinc-800 text-zinc-100 border border-zinc-700",
             )}
             title={showHistory ? "Close history" : "Open history"}
-            aria-label={showHistory ? "Close edit history" : "Open edit history"}
+            aria-label={showHistory ? "Close generation history" : "Open generation history"}
             aria-expanded={showHistory}
           >
             {showHistory ? (

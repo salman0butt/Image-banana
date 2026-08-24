@@ -133,6 +133,16 @@ export const AIPromptInput = () => {
     attachmentsRef.current = attachments;
   }, [attachments]);
 
+  useEffect(
+    () =>
+      useEditorStore.subscribe((state, previousState) => {
+        if (state.prompt && state.prompt !== previousState.prompt) {
+          setText(state.prompt);
+        }
+      }),
+    [],
+  );
+
   useEffect(() => {
     if (creditsQuery.data) {
       setCreditBalance(creditsQuery.data.balance);

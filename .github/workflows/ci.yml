@@ -83,6 +83,7 @@ jobs:
           version: 2.115.0
 
       - name: Start local Supabase
+        id: supabase-start
         run: |
           supabase start
           supabase db reset
@@ -105,7 +106,7 @@ jobs:
         run: pnpm e2e:auth
 
       - name: Stop local Supabase
-        if: always()
+        if: always() && steps.supabase-start.outcome != 'skipped'
         run: supabase stop --no-backup
 
       - name: Production build

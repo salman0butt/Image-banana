@@ -132,7 +132,8 @@ async function signIn(page: Page) {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL("http://127.0.0.1:3000/");
+  await expect(page).toHaveURL("http://127.0.0.1:3000/editor");
+  await expect(page.getByRole("heading", { name: "Start Creating" })).toBeVisible();
 }
 
 test.beforeEach(async ({ page }) => {
@@ -142,6 +143,33 @@ test.beforeEach(async ({ page }) => {
 
 test.afterEach(async () => {
   await deleteDisposableUser();
+});
+
+test("authenticated homepage exposes editor, account, and paid plan selection", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  await expect(page.getByRole("link", { name: "Open Editor" }).first()).toHaveAttribute(
+    "href",
+    "/editor",
+  );
+  await expect(page.getByRole("link", { name: "Account" }).first()).toHaveAttribute(
+    "href",
+    "/account",
+  );
+
+  const creatorLink = page.locator("#pricing").getByRole("link", {
+    name: "Choose Creator",
+  });
+  await expect(creatorLink).toHaveAttribute("href", "/account?plan=creator");
+  await creatorLink.click();
+  await expect(page).toHaveURL("http://127.0.0.1:3000/account?plan=creator");
+  await expect(
+    page.getByRole("heading", { name: "Creator", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("300 monthly credits", { exact: true })).toBeVisible();
+  await expect(page.getByText("$12", { exact: true })).toBeVisible();
 });
 
 test("authenticated user sees server-controlled models and initial credits", async ({

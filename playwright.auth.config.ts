@@ -1,18 +1,27 @@
 import { defineConfig, devices } from "@playwright/test";
 
-function requiredEnv(name: string): string {
-  const value = process.env[name]?.trim();
-  if (!value) {
-    throw new Error(`${name} is required for authenticated E2E tests.`);
+function requiredEnv(...names: string[]): string {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) return value;
   }
-  return value;
+
+  throw new Error(`${names.join(" or ")} is required for authenticated E2E tests.`);
 }
 
 const supabaseUrl = requiredEnv("NEXT_PUBLIC_SUPABASE_URL");
 const supabasePublishableKey = requiredEnv(
   "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
 );
-const supabaseServiceRoleKey = requiredEnv("SUPABASE_SERVICE_ROLE_KEY");
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY?.trim();
+
+if (!supabaseServiceRoleKey && !supabaseSecretKey) {
+  throw new Error(
+    "SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY is required for authenticated E2E tests.",
+  );
+}
+
 const openAiApiKey = "e2e-openai-api-key";
 
 export default defineConfig({
@@ -42,7 +51,10 @@ export default defineConfig({
       NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: supabasePublishableKey,
       NEXT_PUBLIC_SITE_URL: "http://127.0.0.1:3000",
-      SUPABASE_SERVICE_ROLE_KEY: supabaseServiceRoleKey,
+      ...(supabaseServiceRoleKey
+        ? { SUPABASE_SERVICE_ROLE_KEY: supabaseServiceRoleKey }
+        : {}),
+      ...(supabaseSecretKey ? { SUPABASE_SECRET_KEY: supabaseSecretKey } : {}),
       SIGNUP_CREDITS: "25",
       OPENAI_API_KEY: openAiApiKey,
       OPENAI_MODEL: "gpt-5.6",

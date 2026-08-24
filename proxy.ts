@@ -3,7 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getSafeNextPath } from "@/lib/auth/redirect";
 import { updateSession } from "@/lib/supabase/proxy";
 
-const PUBLIC_AUTH_PATHS = new Set([
+const PUBLIC_PATHS = new Set([
+  "/",
   "/auth/login",
   "/auth/register",
   "/auth/forgot-password",
@@ -19,9 +20,9 @@ function copySessionCookies(source: NextResponse, target: NextResponse) {
 export async function proxy(request: NextRequest) {
   const { response, userId } = await updateSession(request);
   const { pathname, search } = request.nextUrl;
-  const isPublicAuthPath = PUBLIC_AUTH_PATHS.has(pathname);
+  const isPublicPath = PUBLIC_PATHS.has(pathname);
 
-  if (!userId && !isPublicAuthPath) {
+  if (!userId && !isPublicPath) {
     if (pathname.startsWith("/api/")) {
       return copySessionCookies(
         response,
@@ -45,7 +46,7 @@ export async function proxy(request: NextRequest) {
     (pathname === "/auth/login" || pathname === "/auth/register")
   ) {
     const appUrl = request.nextUrl.clone();
-    appUrl.pathname = "/";
+    appUrl.pathname = "/editor";
     appUrl.search = "";
     return copySessionCookies(response, NextResponse.redirect(appUrl));
   }

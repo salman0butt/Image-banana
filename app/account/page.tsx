@@ -1,8 +1,10 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { signOut } from "@/app/auth/actions";
 import { Button } from "@/components/ui/button";
-import { getCreditBalance } from "@/lib/credits";
+import { getConfiguredSignupCredits, getCreditBalance } from "@/lib/credits";
+import { getPublicPricingPlan } from "@/lib/marketing";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -67,20 +69,58 @@ export default async function AccountPage({
   }
 
   const message = typeof params.message === "string" ? params.message : undefined;
+  const planId = typeof params.plan === "string" ? params.plan : undefined;
+  const selectedPlan = getPublicPricingPlan(getConfiguredSignupCredits(), planId);
   const email = typeof claims?.email === "string" ? claims.email : "";
 
   return (
-    <main className="min-h-screen bg-background px-4 py-12 text-foreground">
-      <section className="mx-auto w-full max-w-3xl space-y-6 rounded-2xl border border-border bg-card p-6 shadow-xl sm:p-8">
+    <main className="min-h-screen bg-background px-4 py-10 text-foreground sm:py-12">
+      <section className="mx-auto w-full max-w-3xl space-y-6 rounded-2xl border border-border bg-card p-5 shadow-xl sm:p-8">
         <div>
           <p className="text-sm font-semibold text-primary">Image&apos;s Banana</p>
           <h1 className="mt-2 text-2xl font-semibold">Account</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Your profile, generation credits, and recent credit activity.
+            Your profile, generation credits, plan selection, and recent credit activity.
           </p>
         </div>
         {message ? (
           <p className="rounded-lg bg-muted px-3 py-2 text-sm">{message}</p>
+        ) : null}
+
+        {selectedPlan && selectedPlan.id !== "free" ? (
+          <section
+            aria-labelledby="selected-plan-heading"
+            className="rounded-xl border border-primary/30 bg-primary/5 p-4 sm:p-5"
+          >
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+                  Selected package
+                </p>
+                <h2 id="selected-plan-heading" className="mt-1 text-xl font-semibold">
+                  {selectedPlan.name}
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {selectedPlan.description}
+                </p>
+              </div>
+              <div className="shrink-0 sm:text-right">
+                <p className="text-2xl font-semibold">${selectedPlan.monthlyPriceUsd}</p>
+                <p className="text-xs text-muted-foreground">per month</p>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+              <span className="rounded-full border border-border bg-background px-3 py-1.5 font-medium">
+                {selectedPlan.monthlyCredits?.toLocaleString()} monthly credits
+              </span>
+              <span className="rounded-full border border-border bg-background px-3 py-1.5 text-muted-foreground">
+                Same editor · more capacity
+              </span>
+            </div>
+            <p className="mt-4 text-xs leading-5 text-muted-foreground">
+              Billing activation is provider-gated. Your credit balance is never changed by this selection alone; paid credits are applied only after trusted payment confirmation.
+            </p>
+          </section>
         ) : null}
 
         <dl className="grid gap-4 rounded-xl border border-border p-4 sm:grid-cols-2">
@@ -174,11 +214,19 @@ export default async function AccountPage({
           </div>
         </div>
 
-        <form action={signOut}>
-          <Button type="submit" variant="outline">
-            Sign out
+        <div className="flex flex-wrap gap-3">
+          <Button asChild>
+            <Link href="/editor">Open editor</Link>
           </Button>
-        </form>
+          <Button asChild variant="outline">
+            <Link href="/#pricing">View plans</Link>
+          </Button>
+          <form action={signOut}>
+            <Button type="submit" variant="outline">
+              Sign out
+            </Button>
+          </form>
+        </div>
       </section>
     </main>
   );

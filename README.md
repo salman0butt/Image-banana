@@ -54,7 +54,15 @@ Configure the required values in `.env.local`:
 - `OPENAI_API_KEY`
 - `SIGNUP_CREDITS` — optional; defaults to `25`
 
-Apply the SQL migrations in `supabase/migrations` to the Supabase project in filename order. The generation-history slice is added by `20260824010000_generation_history.sql` after the auth/profile and credits migrations. Optional OpenAI output settings are documented in `.env.example`. Image model/quality selection is intentionally controlled by `lib/image-models.ts` so arbitrary client model IDs cannot bypass pricing rules.
+Apply the SQL migrations in `supabase/migrations` to the Supabase project in filename order. The generation-history slice is added by `20260824010000_generation_history.sql` after the auth/profile and credits migrations. For a remote project, authenticate and push the tracked migrations with the Supabase CLI:
+
+```bash
+npx supabase@2.115.0 login
+npx supabase@2.115.0 link --project-ref <project-ref>
+npx supabase@2.115.0 db push
+```
+
+Use `npx supabase@2.115.0 start && npx supabase@2.115.0 db reset` for a disposable local stack instead. Never run `db reset` against a remote project. Optional OpenAI output settings are documented in `.env.example`. Image model/quality selection is intentionally controlled by `lib/image-models.ts` so arbitrary client model IDs cannot bypass pricing rules.
 
 If Supabase public configuration is missing, public auth pages remain renderable and auth actions return a clear configuration message instead of surfacing a raw server runtime error.
 

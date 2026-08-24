@@ -107,8 +107,9 @@ export function getApiErrorResponse(
   fallbackMessage: string,
   fallbackStatus = 400,
 ): Response {
-  const status = error instanceof ApiRequestError ? error.status : fallbackStatus;
-  const message = error instanceof Error ? error.message : fallbackMessage;
+  if (error instanceof ApiRequestError) {
+    return Response.json({ error: error.message }, { status: error.status });
+  }
 
-  return Response.json({ error: message }, { status });
+  return Response.json({ error: fallbackMessage }, { status: fallbackStatus });
 }

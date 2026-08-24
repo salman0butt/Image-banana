@@ -1,10 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-const IMAGE_REFERENCE_VERSION = 1 as const;
+const IMAGE_REFERENCE_VERSION = 2 as const;
 export const IMAGE_REFERENCE_TTL_SECONDS = 24 * 60 * 60;
 
 type ImageReferencePayload = {
   v: typeof IMAGE_REFERENCE_VERSION;
+  userId: string;
   fileId: string;
   width: number;
   height: number;
@@ -13,7 +14,7 @@ type ImageReferencePayload = {
 
 function deriveSigningKey(apiKey: string): Buffer {
   return createHmac("sha256", apiKey)
-    .update("image-banana:image-reference:v1")
+    .update("image-banana:image-reference:v2")
     .digest();
 }
 
@@ -28,6 +29,8 @@ function isValidPayload(value: unknown): value is ImageReferencePayload {
 
   return (
     payload.v === IMAGE_REFERENCE_VERSION &&
+    typeof payload.userId === "string" &&
+    payload.userId.length > 0 &&
     typeof payload.fileId === "string" &&
     payload.fileId.length > 0 &&
     Number.isInteger(payload.width) &&
@@ -41,6 +44,7 @@ function isValidPayload(value: unknown): value is ImageReferencePayload {
 
 export function createImageReference(
   apiKey: string,
+  userId: string,
   fileId: string,
   width: number,
   height: number,
@@ -48,6 +52,7 @@ export function createImageReference(
 ): string {
   const payload: ImageReferencePayload = {
     v: IMAGE_REFERENCE_VERSION,
+    userId,
     fileId,
     width,
     height,
@@ -62,6 +67,7 @@ export function createImageReference(
 export function parseImageReference(
   apiKey: string,
   reference: string,
+  expectedUserId: string,
 ): ImageReferencePayload {
   const [body, encodedSignature, extra] = reference.split(".");
 
@@ -94,7 +100,7 @@ export function parseImageReference(
     throw new Error("The image reference is invalid.");
   }
 
-  if (!isValidPayload(parsed)) {
+  if (!isValidPayload(parsed) || parsed.userId !== expectedUserId) {
     throw new Error("The image reference is invalid.");
   }
 

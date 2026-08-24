@@ -25,6 +25,9 @@ test("public homepage renders without authentication and without browser errors"
     page.getByRole("heading", { name: "Describe the change. Keep creating." }),
   ).toBeVisible();
   await expect(page).toHaveURL("http://127.0.0.1:3000/");
+  await expect(
+    page.getByAltText("Original studio scene with a yellow lounge chair shown inside the editor preview"),
+  ).toBeVisible();
   await expect(page.locator("#features")).toBeAttached();
   await expect(page.locator("#pricing")).toBeAttached();
   await expect(page.locator("#faq")).toBeAttached();
@@ -104,27 +107,38 @@ test("mobile navigation is accessible and supported widths avoid horizontal over
   }
 });
 
-test("pricing reflects available Free access and disabled future subscriptions", async ({
-  page,
-}) => {
+test("Free, Creator, and Pro are fully defined and selectable", async ({ page }) => {
   await page.goto("/#pricing");
   const pricing = page.locator("#pricing");
 
-  await expect(
-    pricing.getByRole("heading", { name: "Free", exact: true }),
-  ).toBeVisible();
-  await expect(
-    pricing.getByRole("heading", { name: "Creator", exact: true }),
-  ).toBeVisible();
-  await expect(
-    pricing.getByRole("heading", { name: "Pro", exact: true }),
-  ).toBeVisible();
-  await expect(
-    pricing.getByRole("button", { name: "Coming soon" }),
-  ).toHaveCount(2);
+  for (const plan of ["Free", "Creator", "Pro"] as const) {
+    await expect(
+      pricing.getByRole("heading", { name: plan, exact: true }),
+    ).toBeVisible();
+  }
+
+  await expect(pricing.getByText("$0", { exact: true })).toBeVisible();
+  await expect(pricing.getByText("$12", { exact: true })).toBeVisible();
+  await expect(pricing.getByText("$29", { exact: true })).toBeVisible();
+  await expect(pricing.getByText("300 credits each month")).toBeVisible();
+  await expect(pricing.getByText("1,000 credits each month")).toBeVisible();
+  await expect(pricing.getByText(/Coming soon/i)).toHaveCount(0);
+
   await expect(
     pricing.getByRole("link", { name: "Start Free" }),
   ).toHaveAttribute("href", "/auth/register?next=%2Feditor");
+  await expect(
+    pricing.getByRole("link", { name: "Choose Creator" }),
+  ).toHaveAttribute(
+    "href",
+    "/auth/register?next=%2Faccount%3Fplan%3Dcreator",
+  );
+  await expect(
+    pricing.getByRole("link", { name: "Choose Pro" }),
+  ).toHaveAttribute(
+    "href",
+    "/auth/register?next=%2Faccount%3Fplan%3Dpro",
+  );
 
   await expect(
     page.getByRole("heading", { name: "Fast", exact: true }).locator(".."),

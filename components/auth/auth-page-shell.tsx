@@ -12,15 +12,15 @@ import {
 
 import { Button } from "@/components/ui/button";
 
-type AuthMode = "login" | "register";
+type AuthMode = "login" | "register" | "account";
 
 type AuthPageShellProps = {
-  mode: AuthMode;
+  mode?: AuthMode;
   title: string;
   description: string;
-  alternateHref: string;
-  alternateLabel: string;
-  alternatePrompt: string;
+  alternateHref?: string;
+  alternateLabel?: string;
+  alternatePrompt?: string;
   children: ReactNode;
 };
 
@@ -38,7 +38,7 @@ const benefits = [
 ] as const;
 
 export function AuthPageShell({
-  mode,
+  mode = "account",
   title,
   description,
   alternateHref,
@@ -46,6 +46,14 @@ export function AuthPageShell({
   alternatePrompt,
   children,
 }: AuthPageShellProps) {
+  const hasAlternateAction = Boolean(alternateHref && alternateLabel);
+  const eyebrow =
+    mode === "login"
+      ? "Welcome back"
+      : mode === "register"
+        ? "Create your workspace"
+        : "Account security";
+
   return (
     <div className="flex min-h-screen flex-col overflow-x-hidden bg-zinc-950 text-zinc-100">
       <header className="border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur-xl">
@@ -84,17 +92,32 @@ export function AuthPageShell({
           </nav>
 
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            <span className="hidden text-sm text-zinc-500 md:inline">
-              {alternatePrompt}
-            </span>
-            <Button
-              asChild
-              variant="outline"
-              size="sm"
-              className="border-zinc-700 bg-zinc-950 text-zinc-200 hover:bg-zinc-900 hover:text-white"
-            >
-              <Link href={alternateHref}>{alternateLabel}</Link>
-            </Button>
+            {hasAlternateAction ? (
+              <>
+                {alternatePrompt ? (
+                  <span className="hidden text-sm text-zinc-500 md:inline">
+                    {alternatePrompt}
+                  </span>
+                ) : null}
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                  className="border-zinc-700 bg-zinc-950 text-zinc-200 hover:bg-zinc-900 hover:text-white"
+                >
+                  <Link href={alternateHref!}>{alternateLabel}</Link>
+                </Button>
+              </>
+            ) : (
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="border-zinc-700 bg-zinc-950 text-zinc-200 hover:bg-zinc-900 hover:text-white"
+              >
+                <Link href="/">Home</Link>
+              </Button>
+            )}
           </div>
         </div>
       </header>
@@ -170,7 +193,7 @@ export function AuthPageShell({
 
               <div className="mb-7">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-yellow-400">
-                  {mode === "login" ? "Welcome back" : "Create your workspace"}
+                  {eyebrow}
                 </p>
                 <h1 className="mt-3 text-3xl font-semibold tracking-[-0.035em] text-white sm:text-4xl">
                   {title}

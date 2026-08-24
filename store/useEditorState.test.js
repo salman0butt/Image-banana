@@ -16,6 +16,7 @@ function resetStore() {
     showHistory: false,
     isLoading: false,
     isUploading: false,
+    isMaskProcessing: false,
     errorMessage: null,
     userFiles: [],
     selectedModelId: DEFAULT_IMAGE_MODEL_ID,
@@ -67,6 +68,26 @@ test("resets loading and exposes an error after an edit request fails", async ()
   await expect(generation).rejects.toThrow("Editing failed.");
   expect(useEditorStore.getState().isLoading).toBe(false);
   expect(useEditorStore.getState().errorMessage).toBe("Editing failed.");
+});
+
+test("does not generate while the latest mask is still being encoded", async () => {
+  useEditorStore
+    .getState()
+    .setImage("blob:http://localhost/source", "signed-source-ref");
+  useEditorStore.getState().setPrompt("Change only the selection");
+  useEditorStore.getState().setMaskProcessing(true);
+
+  let fetchCalled = false;
+  globalThis.fetch = async () => {
+    fetchCalled = true;
+    throw new Error("fetch should not run");
+  };
+
+  await expect(useEditorStore.getState().generateEdit()).rejects.toThrow(
+    "The selection mask is still being prepared.",
+  );
+  expect(fetchCalled).toBe(false);
+  expect(useEditorStore.getState().isLoading).toBe(false);
 });
 
 test("cancels an active edit request with AbortController", async () => {

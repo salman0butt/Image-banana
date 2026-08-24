@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { Trash2 } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -19,7 +20,14 @@ export const RightSidebar = () => {
     historyIndex,
     setHistoryIndex,
     clearHistoryExceptCurrent,
-  } = useEditorStore();
+  } = useEditorStore(
+    useShallow((state) => ({
+      history: state.history,
+      historyIndex: state.historyIndex,
+      setHistoryIndex: state.setHistoryIndex,
+      clearHistoryExceptCurrent: state.clearHistoryExceptCurrent,
+    })),
+  );
 
   return (
     <aside

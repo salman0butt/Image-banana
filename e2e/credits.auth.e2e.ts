@@ -131,6 +131,33 @@ test("authenticated user sees server-controlled models and initial credits", asy
   }
 });
 
+test("image references cannot be reused across authenticated users", async ({ page }) => {
+  const foreignReference = createImageReference(
+    OPENAI_E2E_API_KEY,
+    randomUUID(),
+    "file_e2e_foreign_owner",
+    2,
+    2,
+  );
+
+  const response = await page.request.post("/api/edit-image", {
+    multipart: {
+      imageRef: foreignReference,
+      prompt: "Try to edit another user's image reference",
+      modelId: "gpt-image-2-fast",
+    },
+  });
+
+  expect(response.status()).toBe(400);
+  await expect(response.json()).resolves.toEqual({
+    error: "The image reference is invalid.",
+  });
+
+  const creditsResponse = await page.request.get("/api/credits");
+  expect(creditsResponse.status()).toBe(200);
+  await expect(creditsResponse.json()).resolves.toEqual({ balance: SIGNUP_CREDITS });
+});
+
 test("insufficient credits are enforced in both UI and edit API", async ({
   page,
 }) => {
@@ -155,6 +182,7 @@ test("insufficient credits are enforced in both UI and edit API", async ({
     multipart: {
       imageRef: createImageReference(
         OPENAI_E2E_API_KEY,
+        userId,
         "file_e2e_insufficient",
         2,
         2,
@@ -190,6 +218,7 @@ test("post-charge edit failure is refunded and appears in account ledger", async
     multipart: {
       imageRef: createImageReference(
         OPENAI_E2E_API_KEY,
+        userId,
         "file_e2e_refund",
         2,
         2,

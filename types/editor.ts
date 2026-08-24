@@ -1,6 +1,6 @@
 export type EditorReferenceFile = {
   type: "file";
-  url: string;
+  file: File;
   mediaType: string;
   filename?: string;
 };

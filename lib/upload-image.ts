@@ -1,12 +1,18 @@
 type UploadImageResponse = {
   imageRef?: unknown;
+  assetId?: unknown;
   error?: unknown;
+};
+
+export type UploadedImage = {
+  imageRef: string;
+  assetId: string;
 };
 
 export async function uploadImage(
   file: File,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<UploadedImage> {
   const formData = new FormData();
   formData.append("image", file, file.name || "image");
 
@@ -28,5 +34,9 @@ export async function uploadImage(
     throw new Error("The upload API returned no image reference.");
   }
 
-  return data.imageRef;
+  if (typeof data.assetId !== "string" || !data.assetId) {
+    throw new Error("The upload API returned no persistent image asset.");
+  }
+
+  return { imageRef: data.imageRef, assetId: data.assetId };
 }

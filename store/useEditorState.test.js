@@ -3,12 +3,15 @@ import { DEFAULT_IMAGE_MODEL_ID } from "../lib/image-models";
 import { useEditorStore } from "./useEditorState";
 
 const originalFetch = globalThis.fetch;
+const SOURCE_ASSET_ID = "11111111-1111-4111-8111-111111111111";
 
 function resetStore() {
   useEditorStore.setState({
     image: null,
     imageRef: null,
+    assetId: null,
     imageRefsByImage: {},
+    assetIdsByImage: {},
     mask: null,
     prompt: "",
     history: [],
@@ -28,32 +31,46 @@ afterEach(() => {
   resetStore();
 });
 
-test("tracks the signed server reference for an uploaded image", () => {
+test("tracks the provider reference and persistent asset for an uploaded image", () => {
   const image = "blob:http://localhost/source";
 
   useEditorStore.getState().setImage(image);
-  useEditorStore.getState().attachImageRef(image, "signed-source-ref");
+  useEditorStore
+    .getState()
+    .attachImageRef(image, "signed-source-ref", SOURCE_ASSET_ID);
 
   expect(useEditorStore.getState().imageRef).toBe("signed-source-ref");
+  expect(useEditorStore.getState().assetId).toBe(SOURCE_ASSET_ID);
   expect(useEditorStore.getState().imageRefsByImage[image]).toBe(
     "signed-source-ref",
   );
+  expect(useEditorStore.getState().assetIdsByImage[image]).toBe(SOURCE_ASSET_ID);
 });
 
 test("ignores a file reference that belongs to a stale upload", () => {
   useEditorStore.getState().setImage("blob:http://localhost/current");
   useEditorStore
     .getState()
-    .attachImageRef("blob:http://localhost/stale", "stale-ref");
+    .attachImageRef(
+      "blob:http://localhost/stale",
+      "stale-ref",
+      SOURCE_ASSET_ID,
+    );
 
   expect(useEditorStore.getState().imageRef).toBeNull();
+  expect(useEditorStore.getState().assetId).toBeNull();
   expect(useEditorStore.getState().imageRefsByImage).toEqual({});
+  expect(useEditorStore.getState().assetIdsByImage).toEqual({});
 });
 
 test("resets loading and exposes an error after an edit request fails", async () => {
   useEditorStore
     .getState()
-    .setImage("blob:http://localhost/source", "signed-source-ref");
+    .setImage(
+      "blob:http://localhost/source",
+      "signed-source-ref",
+      SOURCE_ASSET_ID,
+    );
   useEditorStore.getState().setPrompt("Make it blue");
   globalThis.fetch = async () =>
     new Response(JSON.stringify({ error: "Editing failed." }), {
@@ -71,7 +88,9 @@ test("resets loading and exposes an error after an edit request fails", async ()
 
 test("cancels an active edit request with AbortController", async () => {
   const image = "blob:http://localhost/source";
-  useEditorStore.getState().setImage(image, "signed-source-ref");
+  useEditorStore
+    .getState()
+    .setImage(image, "signed-source-ref", SOURCE_ASSET_ID);
   useEditorStore.getState().setPrompt("Make it blue");
 
   let requestSignal;
@@ -111,16 +130,21 @@ test("cancels an active edit request with AbortController", async () => {
   expect(useEditorStore.getState().history).toEqual([image]);
 });
 
-test("sends the selected model and tracks the server credit balance", async () => {
+test("sends the source asset and selected model and tracks server credits", async () => {
   useEditorStore
     .getState()
-    .setImage("blob:http://localhost/source", "signed-source-ref");
+    .setImage(
+      "blob:http://localhost/source",
+      "signed-source-ref",
+      SOURCE_ASSET_ID,
+    );
   useEditorStore.getState().setPrompt("Make it cinematic");
   useEditorStore.getState().setSelectedModelId("gpt-image-2-quality");
 
   globalThis.fetch = async (_input, init) => {
     const body = init?.body;
     expect(body).toBeInstanceOf(FormData);
+    expect(body.get("sourceAssetId")).toBe(SOURCE_ASSET_ID);
     expect(body.get("modelId")).toBe("gpt-image-2-quality");
 
     return new Response(new Uint8Array([137, 80, 78, 71, 1]), {
@@ -128,6 +152,7 @@ test("sends the selected model and tracks the server credit balance", async () =
       headers: {
         "Content-Type": "image/png",
         "X-Image-Reference": "generated-ref",
+        "X-Image-Asset-Id": "22222222-2222-4222-8222-222222222222",
         "X-Credits-Remaining": "17",
       },
     });
@@ -136,19 +161,34 @@ test("sends the selected model and tracks the server credit balance", async () =
   await useEditorStore.getState().generateEdit();
 
   expect(useEditorStore.getState().imageRef).toBe("generated-ref");
+  expect(useEditorStore.getState().assetId).toBe(
+    "22222222-2222-4222-8222-222222222222",
+  );
   expect(useEditorStore.getState().creditBalance).toBe(17);
 });
 
 test("ignores out-of-range history indexes", () => {
-  useEditorStore.getState().setImage("blob:http://localhost/source", "source-ref");
+  useEditorStore
+    .getState()
+    .setImage(
+      "blob:http://localhost/source",
+      "source-ref",
+      SOURCE_ASSET_ID,
+    );
   useEditorStore.getState().setHistoryIndex(99);
 
   expect(useEditorStore.getState().historyIndex).toBe(0);
   expect(useEditorStore.getState().image).toBe("blob:http://localhost/source");
 });
 
-test("new edits after undo discard the redo branch", async () => {
-  useEditorStore.getState().setImage("blob:http://localhost/source", "source-ref");
+test("new edits after undo discard the redo branch and keep asset lineage", async () => {
+  useEditorStore
+    .getState()
+    .setImage(
+      "blob:http://localhost/source",
+      "source-ref",
+      SOURCE_ASSET_ID,
+    );
   useEditorStore.getState().setPrompt("First edit");
 
   let requestCount = 0;
@@ -159,6 +199,7 @@ test("new edits after undo discard the redo branch", async () => {
       headers: {
         "Content-Type": "image/png",
         "X-Image-Reference": `generated-ref-${requestCount}`,
+        "X-Image-Asset-Id": `22222222-2222-4222-8222-22222222222${requestCount}`,
       },
     });
   };
@@ -175,4 +216,7 @@ test("new edits after undo discard the redo branch", async () => {
   expect(useEditorStore.getState().history).toHaveLength(3);
   expect(useEditorStore.getState().historyIndex).toBe(2);
   expect(useEditorStore.getState().imageRef).toBe("generated-ref-3");
+  expect(useEditorStore.getState().assetId).toBe(
+    "22222222-2222-4222-8222-222222222223",
+  );
 });

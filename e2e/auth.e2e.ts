@@ -48,7 +48,15 @@ test("protected account routes redirect unauthenticated users to login", async (
 test("protected APIs return a structured unauthorized response", async ({
   request,
 }) => {
-  for (const path of ["/api/auth/me", "/api/credits", "/api/models"]) {
+  const paths = [
+    "/api/auth/me",
+    "/api/credits",
+    "/api/models",
+    "/api/history",
+    "/api/assets/open?assetId=11111111-1111-4111-8111-111111111111",
+  ];
+
+  for (const path of paths) {
     const response = await request.get(path);
 
     expect(response.status()).toBe(401);

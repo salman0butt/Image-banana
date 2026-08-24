@@ -9,6 +9,7 @@ import {
   createImageReference,
   IMAGE_REFERENCE_TTL_SECONDS,
 } from "@/lib/image-reference";
+import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,14 @@ const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
 const MAX_REQUEST_BYTES = MAX_IMAGE_BYTES + 1024 * 1024;
 const MAX_IMAGE_PIXELS = 40_000_000;
 const UPLOADS_PER_MINUTE = 20;
+
+async function getAuthenticatedUserId(): Promise<string | null> {
+  const supabase = await createSupabaseClient();
+  const { data, error } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+
+  return !error && typeof claims?.sub === "string" ? claims.sub : null;
+}
 
 export async function POST(request: Request) {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -32,6 +41,24 @@ export async function POST(request: Request) {
     assertRateLimit(request, "upload-image", UPLOADS_PER_MINUTE);
   } catch (error) {
     return getApiErrorResponse(error, "Invalid upload request.");
+  }
+
+  let userId: string | null = null;
+  try {
+    userId = await getAuthenticatedUserId();
+  } catch (error) {
+    console.error("Unable to verify upload authentication:", error);
+    return Response.json(
+      { error: "Unable to verify authentication." },
+      { status: 500 },
+    );
+  }
+
+  if (!userId) {
+    return Response.json(
+      { error: "Authentication required.", code: "UNAUTHORIZED" },
+      { status: 401 },
+    );
   }
 
   let formData: FormData;
@@ -117,7 +144,13 @@ export async function POST(request: Request) {
     );
 
     return Response.json({
-      imageRef: createImageReference(apiKey, uploaded.id, width, height),
+      imageRef: createImageReference(
+        apiKey,
+        userId,
+        uploaded.id,
+        width,
+        height,
+      ),
     });
   } catch (error) {
     console.error("OpenAI image upload failed:", error);

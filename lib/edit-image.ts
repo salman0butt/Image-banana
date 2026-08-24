@@ -51,38 +51,30 @@ function readCreditsRemaining(response: Response): number | null {
   return Number.isInteger(value) && value >= 0 ? value : null;
 }
 
-async function appendReferenceFiles(
+function appendReferenceFiles(
   formData: FormData,
   files: EditorReferenceFile[],
-  signal?: AbortSignal,
-): Promise<void> {
+): void {
   if (files.length > MAX_REFERENCE_FILES) {
     throw new Error(`Attach at most ${MAX_REFERENCE_FILES} reference files.`);
   }
 
-  await Promise.all(
-    files.map(async (file, index) => {
-      if (!file.url.startsWith("blob:") && !file.url.startsWith("data:")) {
-        throw new Error("Reference attachments must be local uploads.");
-      }
+  files.forEach((reference, index) => {
+    const file = reference.file;
+    if (!file.size) {
+      throw new Error(`Reference file ${index + 1} is empty.`);
+    }
 
-      const response = await fetch(file.url, { signal });
-      if (!response.ok) {
-        throw new Error(`Could not read reference file ${index + 1}.`);
-      }
+    if (file.size > MAX_REFERENCE_FILE_BYTES) {
+      throw new Error("Each reference file must be smaller than 20 MB.");
+    }
 
-      const blob = await response.blob();
-      if (!blob.size) {
-        throw new Error(`Reference file ${index + 1} is empty.`);
-      }
-
-      if (blob.size > MAX_REFERENCE_FILE_BYTES) {
-        throw new Error("Each reference file must be smaller than 20 MB.");
-      }
-
-      formData.append("referenceFile", blob, safeFilename(file.filename, index));
-    }),
-  );
+    formData.append(
+      "referenceFile",
+      file,
+      safeFilename(reference.filename || file.name, index),
+    );
+  });
 }
 
 export async function editImage({
@@ -106,7 +98,7 @@ export async function editImage({
     formData.append("mask", mask, "mask.png");
   }
 
-  await appendReferenceFiles(formData, userFiles, signal);
+  appendReferenceFiles(formData, userFiles);
 
   const response = await fetch("/api/edit-image", {
     method: "POST",

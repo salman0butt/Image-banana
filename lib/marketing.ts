@@ -4,9 +4,9 @@ export type PublicPricingPlan = {
   id: "free" | "creator" | "pro";
   name: string;
   description: string;
-  monthlyPriceUsd: number | null;
+  monthlyPriceUsd: number;
   monthlyCredits: number | null;
-  status: "available" | "coming-soon";
+  status: "available";
   features: string[];
 };
 
@@ -17,7 +17,7 @@ export function getPublicPricingPlans(signupCredits: number): PublicPricingPlan[
     {
       id: "free",
       name: "Free",
-      description: "Try the editor with a real credit wallet and the core creative workflow.",
+      description: "Try the complete editor workflow and decide what you want to create next.",
       monthlyPriceUsd: 0,
       monthlyCredits: null,
       status: "available",
@@ -27,35 +27,61 @@ export function getPublicPricingPlans(signupCredits: number): PublicPricingPlan[
           : "Credit wallet included",
         "AI image editor",
         "Selection, brush, and erase tools",
-        "Reference files and model presets",
-        "Session edit history",
+        "Reference images and PDFs",
+        "Persistent generation history",
       ],
     },
     {
       id: "creator",
       name: "Creator",
-      description: "A future subscription for people who create and iterate more often.",
-      monthlyPriceUsd: null,
-      monthlyCredits: null,
-      status: "coming-soon",
+      description: "For regular creators who need more room to experiment and iterate.",
+      monthlyPriceUsd: 12,
+      monthlyCredits: 300,
+      status: "available",
       features: [
-        "Planned recurring credit allowance",
-        "Planned subscription billing",
-        "Final limits published before launch",
+        "300 monthly generation credits",
+        "Everything in Free",
+        "All generation presets",
+        "Reference images and PDFs",
+        "Persistent generation history",
       ],
     },
     {
       id: "pro",
       name: "Pro",
-      description: "A future higher-capacity option for professional creative workflows.",
-      monthlyPriceUsd: null,
-      monthlyCredits: null,
-      status: "coming-soon",
+      description: "For higher-volume professional image editing and production workflows.",
+      monthlyPriceUsd: 29,
+      monthlyCredits: 1000,
+      status: "available",
       features: [
-        "Planned higher generation capacity",
-        "Planned subscription billing",
-        "Final limits published before launch",
+        "1,000 monthly generation credits",
+        "Everything in Creator",
+        "All generation presets",
+        "Full editor toolset",
+        "Persistent generation history",
       ],
     },
   ];
+}
+
+export function getPublicPricingPlan(
+  signupCredits: number,
+  planId: string | undefined,
+): PublicPricingPlan | null {
+  if (!planId) return null;
+  return getPublicPricingPlans(signupCredits).find((plan) => plan.id === planId) ?? null;
+}
+
+export function getPricingPlanHref(
+  planId: PublicPricingPlan["id"],
+  authenticated: boolean,
+): string {
+  if (planId === "free") {
+    return authenticated ? "/editor" : "/auth/register?next=%2Feditor";
+  }
+
+  const destination = `/account?plan=${planId}`;
+  return authenticated
+    ? destination
+    : `/auth/register?next=${encodeURIComponent(destination)}`;
 }

@@ -1,6 +1,7 @@
 import { ToolType } from "@/lib/constants";
 import { useEditorStore } from "@/store/useEditorState";
 import { useEffect, useRef } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 type CanvasPoint = {
   x: number;
@@ -10,7 +11,17 @@ type CanvasPoint = {
 const HIGHLIGHT_COLOR = "rgba(255, 0, 0, 0.4)";
 
 function ImageEditor() {
-  const { image, selectedTool, brushSize, setMask } = useEditorStore();
+  const { image, selectedTool, brushSize, setMask, setMaskProcessing, setErrorMessage } =
+    useEditorStore(
+      useShallow((state) => ({
+        image: state.image,
+        selectedTool: state.selectedTool,
+        brushSize: state.brushSize,
+        setMask: state.setMask,
+        setMaskProcessing: state.setMaskProcessing,
+        setErrorMessage: state.setErrorMessage,
+      })),
+    );
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const startPosRef = useRef<CanvasPoint | null>(null);
@@ -18,8 +29,10 @@ function ImageEditor() {
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const isDrawingRef = useRef(false);
+  const maskRevisionRef = useRef(0);
 
   useEffect(() => {
+    maskRevisionRef.current += 1;
     if (!image) return;
 
     let disposed = false;
@@ -142,13 +155,25 @@ function ImageEditor() {
     const imageAtRequest = image;
     if (!maskCanvas || !imageAtRequest) return;
 
+    const revision = ++maskRevisionRef.current;
+    setMaskProcessing(true);
+
     maskCanvas.toBlob((blob) => {
+      const state = useEditorStore.getState();
       if (
-        blob &&
-        useEditorStore.getState().image === imageAtRequest
+        revision !== maskRevisionRef.current ||
+        state.image !== imageAtRequest
       ) {
-        setMask(blob);
+        return;
       }
+
+      if (blob) {
+        setMask(blob);
+        setErrorMessage(null);
+      } else {
+        setErrorMessage("The selection mask could not be prepared. Try drawing it again.");
+      }
+      setMaskProcessing(false);
     }, "image/png");
   };
 

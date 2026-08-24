@@ -30,7 +30,7 @@ export default async function LoginPage({
       title="Welcome back"
       description="Sign in to open your editor, continue recent generations, and keep creating from where you left off."
       alternatePrompt="New to Image's Banana?"
-      alternateLabel="Create account"
+      alternateLabel="Start free"
       alternateHref={registerHref}
     >
       <form action={signIn} className="space-y-5">

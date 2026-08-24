@@ -68,6 +68,7 @@ export default async function AccountPage({
   }
 
   const message = typeof params.message === "string" ? params.message : undefined;
+  const errorMessage = typeof params.error === "string" ? params.error : undefined;
   const email = typeof claims?.email === "string" ? claims.email : "";
 
   return (
@@ -82,6 +83,14 @@ export default async function AccountPage({
         </div>
         {message ? (
           <p className="rounded-lg bg-muted px-3 py-2 text-sm">{message}</p>
+        ) : null}
+        {errorMessage ? (
+          <p
+            className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            role="alert"
+          >
+            {errorMessage}
+          </p>
         ) : null}
 
         <dl className="grid gap-4 rounded-xl border border-border p-4 sm:grid-cols-2">

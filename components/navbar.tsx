@@ -4,8 +4,27 @@ import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { CircleUserRound, Download, History, Redo, Undo, Upload, X } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/store/useEditorState";
+
+function extensionForImageType(contentType: string): string {
+  switch (contentType.toLowerCase()) {
+    case "image/jpeg":
+      return "jpg";
+    case "image/webp":
+      return "webp";
+    case "image/gif":
+      return "gif";
+    case "image/avif":
+      return "avif";
+    case "image/bmp":
+      return "bmp";
+    case "image/png":
+    default:
+      return "png";
+  }
+}
 
 export function Navbar() {
   const {
@@ -16,7 +35,17 @@ export function Navbar() {
     history,
     image,
     toggleHistory,
-  } = useEditorStore();
+  } = useEditorStore(
+    useShallow((state) => ({
+      undo: state.undo,
+      redo: state.redo,
+      historyIndex: state.historyIndex,
+      showHistory: state.showHistory,
+      history: state.history,
+      image: state.image,
+      toggleHistory: state.toggleHistory,
+    })),
+  );
 
   const handleUpload = () => {
     const input = document.getElementById("image-upload-input");
@@ -25,11 +54,21 @@ export function Navbar() {
     }
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!image) return;
 
+    let extension = "png";
+    try {
+      const response = await fetch(image);
+      if (response.ok) {
+        extension = extensionForImageType((await response.blob()).type);
+      }
+    } catch {
+      // Generated editor output is PNG; keep that safe default if MIME lookup fails.
+    }
+
     const link = document.createElement("a");
-    link.download = `imagebanana-${Date.now()}.png`;
+    link.download = `imagebanana-${Date.now()}.${extension}`;
     link.href = image;
     link.click();
     link.remove();

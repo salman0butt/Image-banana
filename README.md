@@ -1,8 +1,37 @@
 # Image's Banana
 
-AI-assisted image editor built with Next.js, React, TypeScript, Zustand, TanStack Query, Supabase Auth/Storage, Sharp, and the OpenAI Responses / image-generation APIs.
+Image's Banana is an AI-powered image generation and editing workspace. Users upload an image, describe the change they want in natural language, choose an AI image model, and generate a new result without leaving the editor. The canvas tools, references, filters, credits, and generation history are built around that core AI workflow.
 
-## Architecture
+Built with Next.js 16, React 19, TypeScript, Zustand, TanStack Query, Supabase Auth/Storage, Sharp, and OpenAI's image-generation APIs.
+
+![Signed-in Image's Banana editor workspace](docs/screenshots/editor-workspace.png)
+
+_Portfolio snapshot: the authenticated editor with AI editing tools, an uploaded source image, model selection, visible generation credits, and a natural-language prompt ready to generate._
+
+## AI image generation is the core experience
+
+The primary product loop is deliberately simple:
+
+1. Upload a source image and see it immediately in the canvas.
+2. Describe the desired change, from a targeted edit to a broader visual transformation.
+3. Choose from server-controlled AI image-generation presets with the credit cost shown before generation.
+4. Generate a new image through the OpenAI image-generation API, then continue refining it with selection, brush, eraser, filters, and expansion tools.
+5. Reopen successful results from persistent generation history and use them as the starting point for the next edit.
+
+This makes AI generation the main part of the application rather than an isolated button: the editor, binary image pipeline, credit system, authentication, and history all protect and support the generation workflow.
+
+## Product capabilities
+
+- Natural-language AI image generation and editing with visible model and credit selection.
+- Layered canvas interactions for viewing, selecting, brushing, erasing, and masking without reprocessing every pixel on every pointer event.
+- AI actions for background removal, refreshment, filters, and canvas expansion.
+- Binary-first uploads with Sharp normalization, private Supabase Storage persistence, and durable source/output asset relationships.
+- Authenticated workspaces with email/password sign-in, protected routes, profiles, and row-level security.
+- Server-controlled credit reservation, insufficient-credit blocking, idempotent refunds, and auditable generation jobs.
+- Persistent generation history that can reopen saved outputs for another AI edit.
+- Responsive marketing, pricing, authentication, account, and editor experiences.
+
+## Architecture and data flow
 
 The browser renders the editor with layered canvases so brush and selection interactions do not reprocess every pixel on every pointer event.
 

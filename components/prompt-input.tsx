@@ -92,6 +92,7 @@ export const AIPromptInput = () => {
     isLoading,
     selectedModelId,
     creditBalance,
+    prompt,
   } = useEditorStore();
 
   const modelsQuery = useQuery({
@@ -132,6 +133,12 @@ export const AIPromptInput = () => {
   useEffect(() => {
     attachmentsRef.current = attachments;
   }, [attachments]);
+
+  useEffect(() => {
+    if (prompt) {
+      setText(prompt);
+    }
+  }, [prompt]);
 
   useEffect(() => {
     if (creditsQuery.data) {

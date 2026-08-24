@@ -11,6 +11,8 @@ import {
 } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
 
+const MAX_DISPLAY_NAME_LENGTH = 80;
+
 function stringField(formData: FormData, name: string) {
   const value = formData.get(name);
   return typeof value === "string" ? value.trim() : "";
@@ -41,24 +43,27 @@ async function createAuthClient(errorPath: string) {
   }
 }
 
+function httpOrigin(value: string | null | undefined): string | null {
+  if (!value) return null;
+
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
 async function getSiteUrl() {
-  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (configured) {
-    try {
-      return new URL(configured).origin;
-    } catch {
-      // Fall back to the request origin below.
-    }
+  const configuredOrigin = httpOrigin(process.env.NEXT_PUBLIC_SITE_URL?.trim());
+  if (configuredOrigin) {
+    return configuredOrigin;
   }
 
   const requestHeaders = await headers();
-  const origin = requestHeaders.get("origin");
-  if (origin) {
-    try {
-      return new URL(origin).origin;
-    } catch {
-      // Use the local development default below.
-    }
+  const requestOrigin = httpOrigin(requestHeaders.get("origin"));
+  if (requestOrigin) {
+    return requestOrigin;
   }
 
   return "http://localhost:3000";
@@ -95,6 +100,14 @@ export async function signUp(formData: FormData) {
   const email = stringField(formData, "email");
   const password = stringField(formData, "password");
   const next = getSafeNextPath(stringField(formData, "next"), "/editor");
+
+  if (displayName.length > MAX_DISPLAY_NAME_LENGTH) {
+    redirectWithMessage(
+      "/auth/register",
+      "error",
+      `Display name must be ${MAX_DISPLAY_NAME_LENGTH} characters or fewer.`,
+    );
+  }
 
   if (!email || password.length < 8) {
     redirectWithMessage(
@@ -207,6 +220,11 @@ export async function updatePassword(formData: FormData) {
 
 export async function signOut() {
   const supabase = await createAuthClient("/auth/login");
-  await supabase.auth.signOut();
+  const { error } = await supabase.auth.signOut();
+
+  if (error) {
+    redirectWithMessage("/account", "error", "Unable to sign out right now. Please try again.");
+  }
+
   redirect("/auth/login");
 }

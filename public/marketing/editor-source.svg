@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">Original studio product scene</title>
+  <desc id="desc">A warm yellow lounge chair beside a plant and side table in a softly lit studio room.</desc>
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ece9e2"/>
+      <stop offset="1" stop-color="#d8d2c8"/>
+    </linearGradient>
+    <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c7b9a7"/>
+      <stop offset="1" stop-color="#a9937c"/>
+    </linearGradient>
+    <linearGradient id="chair" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#facc15"/>
+      <stop offset="0.58" stop-color="#eab308"/>
+      <stop offset="1" stop-color="#ca8a04"/>
+    </linearGradient>
+    <linearGradient id="wood" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8b5e3c"/>
+      <stop offset="1" stop-color="#5f3c27"/>
+    </linearGradient>
+    <radialGradient id="light" cx="0.23" cy="0.08" r="0.78">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.92"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="24" stdDeviation="22" flood-color="#2f241c" flood-opacity="0.22"/>
+    </filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="760" fill="url(#wall)"/>
+  <rect y="525" width="1200" height="235" fill="url(#floor)"/>
+  <path d="M0 526H1200" stroke="#b7a996" stroke-width="3" opacity="0.7"/>
+  <ellipse cx="594" cy="654" rx="306" ry="52" fill="#4c392a" opacity="0.13" filter="url(#soft)"/>
+
+  <g opacity="0.52">
+    <rect x="85" y="93" width="250" height="330" rx="8" fill="#f7f4ef"/>
+    <rect x="105" y="113" width="210" height="290" rx="4" fill="#c9c2b7"/>
+    <path d="M106 315C167 258 228 242 315 174V403H106Z" fill="#a7b6a1" opacity="0.8"/>
+    <circle cx="246" cy="194" r="52" fill="#ddd0af"/>
+  </g>
+
+  <g transform="translate(815 174)" filter="url(#shadow)">
+    <path d="M112 365C89 288 70 226 53 168" fill="none" stroke="#36523c" stroke-width="13" stroke-linecap="round"/>
+    <path d="M70 215C-2 189 1 130 12 87C75 105 109 145 70 215Z" fill="#416a49"/>
+    <path d="M74 214C143 182 174 129 158 79C97 103 63 151 74 214Z" fill="#527f58"/>
+    <path d="M91 280C24 268 4 222 12 181C72 190 111 226 91 280Z" fill="#5d8b62"/>
+    <path d="M89 279C158 266 192 223 184 173C122 186 83 224 89 279Z" fill="#3d6b45"/>
+    <path d="M105 341C55 335 30 305 28 271C82 275 115 304 105 341Z" fill="#4e7a54"/>
+    <path d="M105 341C160 331 189 299 185 264C132 275 101 304 105 341Z" fill="#638d67"/>
+    <path d="M68 363H151L140 455H82Z" fill="#87614a"/>
+    <path d="M76 377H143" stroke="#a77d61" stroke-width="8"/>
+  </g>
+
+  <g transform="translate(207 494)" filter="url(#shadow)">
+    <ellipse cx="105" cy="32" rx="104" ry="25" fill="#6a4930" opacity="0.48"/>
+    <rect x="14" y="19" width="184" height="22" rx="11" fill="url(#wood)"/>
+    <path d="M39 36L62 180M173 36L148 180" stroke="#5a3a25" stroke-width="15" stroke-linecap="round"/>
+    <rect x="56" y="-72" width="101" height="92" rx="9" fill="#f7f3e9"/>
+    <rect x="64" y="-63" width="85" height="10" rx="5" fill="#dbd2c4"/>
+    <path d="M104-20C94-49 118-66 142-73C147-39 134-18 104-20Z" fill="#718267"/>
+    <path d="M102-20C77-44 62-27 54-9C78-2 96-6 102-20Z" fill="#829278"/>
+  </g>
+
+  <g transform="translate(403 176)" filter="url(#shadow)">
+    <path d="M101 143C112 54 179 10 266 22C349 33 393 92 389 171L382 286H94Z" fill="url(#chair)"/>
+    <path d="M126 151C141 80 194 50 258 57C318 64 353 102 351 164L347 230H119Z" fill="#f6d94a" opacity="0.45"/>
+    <path d="M70 251C70 214 101 184 139 184H350C390 184 421 216 419 255L407 460H83Z" fill="url(#chair)"/>
+    <path d="M113 282C147 303 347 303 389 279" fill="none" stroke="#b77902" stroke-opacity="0.42" stroke-width="5"/>
+    <path d="M115 352C176 370 321 370 389 348" fill="none" stroke="#fff2a3" stroke-opacity="0.26" stroke-width="4"/>
+    <rect x="13" y="226" width="112" height="66" rx="31" transform="rotate(-9 13 226)" fill="#d99a08"/>
+    <rect x="376" y="222" width="112" height="66" rx="31" transform="rotate(9 376 222)" fill="#d99a08"/>
+    <path d="M114 452L85 564M386 452L416 564" stroke="#4b3528" stroke-width="22" stroke-linecap="round"/>
+    <path d="M80 563H129M390 563H439" stroke="#3d2d24" stroke-width="19" stroke-linecap="round"/>
+  </g>
+
+  <rect width="1200" height="760" fill="url(#light)"/>
+  <path d="M0 0H1200V760H0Z" fill="none" stroke="#ffffff" stroke-opacity="0.28" stroke-width="2"/>
+</svg>

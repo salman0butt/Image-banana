@@ -8,6 +8,7 @@ import ImageGenerationLoading from "@/components/image-generation";
 import { AIPromptInput } from "@/components/prompt-input";
 import { RightSidebar } from "@/components/right-sidebar";
 import { useEffect, useRef } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { useEditorStore } from "@/store/useEditorState";
 import ImageEditor from "@/components/image-editor";
 import { uploadImage } from "@/lib/upload-image";
@@ -34,7 +35,18 @@ export default function EditorPage() {
     setErrorMessage,
     showHistory,
     isLoading,
-  } = useEditorStore();
+  } = useEditorStore(
+    useShallow((state) => ({
+      image: state.image,
+      setImage: state.setImage,
+      clearImage: state.clearImage,
+      attachImageRef: state.attachImageRef,
+      setUploading: state.setUploading,
+      setErrorMessage: state.setErrorMessage,
+      showHistory: state.showHistory,
+      isLoading: state.isLoading,
+    })),
+  );
 
   useEffect(
     () => () => {

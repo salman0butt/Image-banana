@@ -48,7 +48,12 @@ export default async function RegisterPage({
       </form>
       <p className="mt-6 text-sm text-muted-foreground">
         Already have an account?{" "}
-        <Link className="text-foreground hover:underline" href="/auth/login?next=%2Feditor">Sign in</Link>
+        <Link
+          className="text-foreground hover:underline"
+          href={`/auth/login?next=${encodeURIComponent(next)}`}
+        >
+          Sign in
+        </Link>
       </p>
     </AuthPageShell>
   );

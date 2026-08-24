@@ -47,7 +47,12 @@ export default async function LoginPage({
         <Button type="submit" className="w-full">Sign in</Button>
       </form>
       <div className="mt-6 flex items-center justify-between gap-4 text-sm text-muted-foreground">
-        <Link className="hover:text-foreground hover:underline" href="/auth/register?next=%2Feditor">Create account</Link>
+        <Link
+          className="hover:text-foreground hover:underline"
+          href={`/auth/register?next=${encodeURIComponent(next)}`}
+        >
+          Create account
+        </Link>
         <Link className="hover:text-foreground hover:underline" href="/auth/forgot-password">Forgot password?</Link>
       </div>
     </AuthPageShell>

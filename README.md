@@ -50,7 +50,7 @@ Configure the required values in `.env.local`:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 - `NEXT_PUBLIC_SITE_URL` (defaults to `http://localhost:3000` in `.env.example`)
-- `SUPABASE_SERVICE_ROLE_KEY` — server only; required for trusted credit mutations and must never use a `NEXT_PUBLIC_` prefix
+- `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_SECRET_KEY` — server-only Supabase admin key; set one for trusted credit mutations and never use a `NEXT_PUBLIC_` prefix
 - `OPENAI_API_KEY`
 - `SIGNUP_CREDITS` — optional; defaults to `25`
 

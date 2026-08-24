@@ -10,17 +10,18 @@ const SIGNUP_CREDITS = 25;
 const OPENAI_E2E_API_KEY = "e2e-openai-api-key";
 const PASSWORD = "Credits-e2e-password-2026!";
 
-function requiredEnv(name: string): string {
-  const value = process.env[name]?.trim();
-  if (!value) {
-    throw new Error(`${name} is required for authenticated E2E tests.`);
+function requiredEnv(...names: string[]): string {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) return value;
   }
-  return value;
+
+  throw new Error(`${names.join(" or ")} is required for authenticated E2E tests.`);
 }
 
 const admin = createClient(
   requiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
-  requiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
+  requiredEnv("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SECRET_KEY"),
   {
     auth: {
       autoRefreshToken: false,

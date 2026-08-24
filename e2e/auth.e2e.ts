@@ -21,6 +21,23 @@ test("login page is accessible and sanitizes external next redirects", async ({
   ).toBeVisible();
 });
 
+test("auth handoff links preserve the requested local destination", async ({
+  page,
+}) => {
+  await page.goto("/auth/login?next=%2Faccount");
+
+  await expect(
+    page.getByRole("link", { name: "Create account" }),
+  ).toHaveAttribute("href", "/auth/register?next=%2Faccount");
+
+  await page.goto("/auth/register?next=%2Faccount");
+
+  await expect(page.getByRole("link", { name: "Sign in" })).toHaveAttribute(
+    "href",
+    "/auth/login?next=%2Faccount",
+  );
+});
+
 test("registration shows a controlled setup error when Supabase is not configured", async ({
   page,
 }) => {

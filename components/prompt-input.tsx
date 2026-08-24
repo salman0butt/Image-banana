@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useEditorStore } from "@/store/useEditorState";
@@ -21,6 +22,7 @@ const MAX_REFERENCE_FILE_BYTES = 20 * 1024 * 1024;
 
 type LocalAttachment = {
   id: string;
+  file: File;
   filename: string;
   mediaType: string;
   size: number;
@@ -43,6 +45,10 @@ type CreditsResponse = {
   balance: number;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 function isAcceptedReference(file: File): boolean {
   return file.type.startsWith("image/") || file.type === "application/pdf";
 }
@@ -58,7 +64,7 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-async function readJson<T>(url: string): Promise<T> {
+async function readJson(url: string): Promise<unknown> {
   const response = await fetch(url, {
     headers: { Accept: "application/json" },
     cache: "no-store",
@@ -68,7 +74,55 @@ async function readJson<T>(url: string): Promise<T> {
     throw new Error(`Request failed with status ${response.status}.`);
   }
 
-  return (await response.json()) as T;
+  return response.json();
+}
+
+function parseModelsResponse(value: unknown): ModelsResponse {
+  if (!isRecord(value) || typeof value.defaultModelId !== "string") {
+    throw new Error("The model catalog response is invalid.");
+  }
+
+  if (!Array.isArray(value.models) || value.models.length === 0) {
+    throw new Error("The model catalog response is invalid.");
+  }
+
+  const models = value.models.map((model) => {
+    if (
+      !isRecord(model) ||
+      typeof model.id !== "string" ||
+      typeof model.label !== "string" ||
+      typeof model.description !== "string" ||
+      !Number.isInteger(model.creditCost) ||
+      Number(model.creditCost) <= 0
+    ) {
+      throw new Error("The model catalog response is invalid.");
+    }
+
+    return {
+      id: model.id,
+      label: model.label,
+      description: model.description,
+      creditCost: Number(model.creditCost),
+    };
+  });
+
+  if (!models.some((model) => model.id === value.defaultModelId)) {
+    throw new Error("The model catalog response is invalid.");
+  }
+
+  return { defaultModelId: value.defaultModelId, models };
+}
+
+function parseCreditsResponse(value: unknown): CreditsResponse {
+  if (
+    !isRecord(value) ||
+    !Number.isInteger(value.balance) ||
+    Number(value.balance) < 0
+  ) {
+    throw new Error("The credit balance response is invalid.");
+  }
+
+  return { balance: Number(value.balance) };
 }
 
 export const AIPromptInput = () => {
@@ -90,19 +144,37 @@ export const AIPromptInput = () => {
     image,
     isUploading,
     isLoading,
+    isMaskProcessing,
     selectedModelId,
     creditBalance,
-  } = useEditorStore();
+  } = useEditorStore(
+    useShallow((state) => ({
+      setPrompt: state.setPrompt,
+      generateEdit: state.generateEdit,
+      cancelEdit: state.cancelEdit,
+      setUserFiles: state.setUserFiles,
+      setErrorMessage: state.setErrorMessage,
+      setSelectedModelId: state.setSelectedModelId,
+      setCreditBalance: state.setCreditBalance,
+      errorMessage: state.errorMessage,
+      image: state.image,
+      isUploading: state.isUploading,
+      isLoading: state.isLoading,
+      isMaskProcessing: state.isMaskProcessing,
+      selectedModelId: state.selectedModelId,
+      creditBalance: state.creditBalance,
+    })),
+  );
 
   const modelsQuery = useQuery({
     queryKey: ["image-models"],
-    queryFn: () => readJson<ModelsResponse>("/api/models"),
+    queryFn: async () => parseModelsResponse(await readJson("/api/models")),
     staleTime: 5 * 60 * 1000,
     retry: 1,
   });
   const creditsQuery = useQuery({
     queryKey: ["credits"],
-    queryFn: () => readJson<CreditsResponse>("/api/credits"),
+    queryFn: async () => parseCreditsResponse(await readJson("/api/credits")),
     staleTime: 30_000,
     retry: 1,
   });
@@ -124,6 +196,8 @@ export const AIPromptInput = () => {
   const models = modelsQuery.data?.models ?? [];
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? null;
   const selectedCreditCost = selectedModel?.creditCost ?? null;
+  const modelCatalogUnavailable =
+    modelsQuery.isLoading || modelsQuery.isError || selectedCreditCost === null;
   const hasInsufficientCredits =
     creditBalance !== null &&
     selectedCreditCost !== null &&
@@ -197,6 +271,7 @@ export const AIPromptInput = () => {
 
       accepted.push({
         id: crypto.randomUUID(),
+        file,
         filename: file.name || "reference",
         mediaType: file.type,
         size: file.size,
@@ -217,7 +292,14 @@ export const AIPromptInput = () => {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (isUploading || isGenerating || hasInsufficientCredits) return;
+    if (isUploading || isGenerating || hasInsufficientCredits || modelCatalogUnavailable) {
+      return;
+    }
+
+    if (useEditorStore.getState().isMaskProcessing) {
+      setErrorMessage("The selection mask is still being prepared. Try again in a moment.");
+      return;
+    }
 
     const prompt = text.trim();
     if (!image) {
@@ -232,7 +314,7 @@ export const AIPromptInput = () => {
 
     const userFiles: EditorReferenceFile[] = attachments.map((attachment) => ({
       type: "file",
-      url: attachment.url,
+      file: attachment.file,
       mediaType: attachment.mediaType,
       filename: attachment.filename,
     }));
@@ -343,7 +425,7 @@ export const AIPromptInput = () => {
             <select
               aria-label="Image model"
               value={selectedModelId}
-              disabled={isUploading || isGenerating || modelsQuery.isLoading}
+              disabled={isUploading || isGenerating || modelsQuery.isLoading || modelsQuery.isError}
               onChange={(event) => setSelectedModelId(event.target.value)}
               className="h-8 max-w-52 rounded-md border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200 outline-none focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
               title={selectedModel?.description ?? "Select image model"}
@@ -355,7 +437,9 @@ export const AIPromptInput = () => {
                   </option>
                 ))
               ) : (
-                <option value={selectedModelId}>GPT Image 2 · Fast</option>
+                <option value={selectedModelId}>
+                  {modelsQuery.isError ? "Models unavailable" : "Loading models…"}
+                </option>
               )}
             </select>
 
@@ -373,6 +457,11 @@ export const AIPromptInput = () => {
               <Loader2 size={15} className="mr-1.5 animate-spin" aria-hidden="true" />
               Uploading
             </Button>
+          ) : isMaskProcessing ? (
+            <Button type="button" size="sm" disabled>
+              <Loader2 size={15} className="mr-1.5 animate-spin" aria-hidden="true" />
+              Preparing mask
+            </Button>
           ) : isGenerating ? (
             <Button
               type="button"
@@ -388,25 +477,39 @@ export const AIPromptInput = () => {
             <Button
               type="submit"
               size="sm"
-              disabled={!image || !text.trim() || hasInsufficientCredits}
+              disabled={
+                !image ||
+                !text.trim() ||
+                hasInsufficientCredits ||
+                modelCatalogUnavailable
+              }
               className="bg-yellow-500 font-semibold text-zinc-950 hover:bg-yellow-400"
               title={
-                hasInsufficientCredits
-                  ? `This model needs ${selectedCreditCost} credits.`
-                  : undefined
+                modelsQuery.isError
+                  ? "Generation presets are temporarily unavailable."
+                  : hasInsufficientCredits
+                    ? `This model needs ${selectedCreditCost} credits.`
+                    : undefined
               }
             >
               <Send size={15} className="mr-1.5" aria-hidden="true" />
-              {hasInsufficientCredits
-                ? `Need ${selectedCreditCost} credits`
-                : selectedCreditCost !== null
-                  ? `Generate · ${selectedCreditCost}`
-                  : "Generate"}
+              {modelsQuery.isError
+                ? "Models unavailable"
+                : hasInsufficientCredits
+                  ? `Need ${selectedCreditCost} credits`
+                  : selectedCreditCost !== null
+                    ? `Generate · ${selectedCreditCost}`
+                    : "Loading models"}
             </Button>
           )}
         </div>
       </form>
 
+      {modelsQuery.isError && (
+        <p className="mt-2 text-sm text-amber-400" role="alert">
+          Generation presets could not be loaded. Refresh or try again shortly.
+        </p>
+      )}
       {errorMessage && (
         <p className="mt-2 text-sm text-red-400" role="alert">
           {errorMessage}

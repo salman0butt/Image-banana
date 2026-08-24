@@ -38,7 +38,9 @@ const MAX_REFERENCE_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_REQUEST_BYTES =
   MAX_MASK_BYTES + MAX_REFERENCE_FILES * MAX_REFERENCE_FILE_BYTES + 2 * 1024 * 1024;
 const MAX_IMAGE_PIXELS = 40_000_000;
+const MAX_GENERATED_IMAGE_BYTES = 50 * 1024 * 1024;
 const EDITS_PER_MINUTE = 8;
+const TEMP_FILE_CLEANUP_TIMEOUT_MS = 3_000;
 
 function envOption<const T extends readonly string[]>(
   value: string | undefined,
@@ -68,6 +70,11 @@ type UploadedReferences = {
   content: ResponseInputContent[];
   fileIds: string[];
 };
+
+export function assertEditRequestEnvelope(request: Request): void {
+  assertRequestContentLength(request, MAX_REQUEST_BYTES, true);
+  assertRateLimit(request, "edit-image", EDITS_PER_MINUTE);
+}
 
 async function readValidatedMask(mask: File): Promise<ValidatedMask> {
   const buffer = Buffer.from(await mask.arrayBuffer());
@@ -106,9 +113,6 @@ async function readValidatedMask(mask: File): Promise<ValidatedMask> {
 export async function readEditImageRequest(
   request: Request,
 ): Promise<EditImageRequest> {
-  assertRequestContentLength(request, MAX_REQUEST_BYTES);
-  assertRateLimit(request, "edit-image", EDITS_PER_MINUTE);
-
   let formData: FormData;
 
   try {
@@ -303,6 +307,7 @@ async function uploadGeneratedImage(
   client: OpenAI,
   generatedImage: string,
   apiKey: string,
+  userId: string,
   signal: AbortSignal,
 ): Promise<{ buffer: Buffer; imageRef: string }> {
   if (!generatedImage.startsWith(PNG_DATA_URL_PREFIX)) {
@@ -316,6 +321,10 @@ async function uploadGeneratedImage(
 
   if (!buffer.length) {
     throw new Error("OpenAI returned an empty image.");
+  }
+
+  if (buffer.length > MAX_GENERATED_IMAGE_BYTES) {
+    throw new Error("OpenAI returned an image that exceeds the supported size limit.");
   }
 
   const metadata = await sharp(buffer, { limitInputPixels: MAX_IMAGE_PIXELS }).metadata();
@@ -339,6 +348,7 @@ async function uploadGeneratedImage(
     buffer,
     imageRef: createImageReference(
       apiKey,
+      userId,
       uploaded.id,
       metadata.width,
       metadata.height,
@@ -350,15 +360,16 @@ async function cleanupTemporaryFiles(client: OpenAI, fileIds: string[]) {
   if (!fileIds.length) return;
 
   const results = await Promise.allSettled(
-    fileIds.map((fileId) => client.files.delete(fileId)),
+    fileIds.map((fileId) =>
+      client.files.delete(fileId, {
+        signal: AbortSignal.timeout(TEMP_FILE_CLEANUP_TIMEOUT_MS),
+      }),
+    ),
   );
 
-  results.forEach((result, index) => {
+  results.forEach((result) => {
     if (result.status === "rejected") {
-      console.warn(
-        `Failed to delete temporary OpenAI file ${fileIds[index]}:`,
-        result.reason,
-      );
+      console.warn("Failed to delete a temporary OpenAI file:", result.reason);
     }
   });
 }
@@ -372,10 +383,8 @@ async function getAuthenticatedUserId(): Promise<string | null> {
 }
 
 export async function POST(request: Request) {
-  let input: EditImageRequest;
-
   try {
-    input = await readEditImageRequest(request);
+    assertEditRequestEnvelope(request);
   } catch (error) {
     return getApiErrorResponse(error, "Invalid edit request.");
   }
@@ -407,6 +416,13 @@ export async function POST(request: Request) {
     );
   }
 
+  let input: EditImageRequest;
+  try {
+    input = await readEditImageRequest(request);
+  } catch (error) {
+    return getApiErrorResponse(error, "Invalid edit request.");
+  }
+
   const imagePreset = getImageModelPreset(input.modelId);
   if (!imagePreset) {
     return Response.json(
@@ -417,7 +433,7 @@ export async function POST(request: Request) {
 
   let sourceReference: ReturnType<typeof parseImageReference>;
   try {
-    sourceReference = parseImageReference(apiKey, input.imageRef);
+    sourceReference = parseImageReference(apiKey, input.imageRef, userId);
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : "Invalid image reference." },
@@ -587,6 +603,7 @@ export async function POST(request: Request) {
       client,
       generatedImage,
       apiKey,
+      userId,
       request.signal,
     );
 

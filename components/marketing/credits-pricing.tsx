@@ -35,8 +35,8 @@ export function CreditsAndPricing({ authenticated, signupCredits }: CreditsPrici
                 <div className="flex items-center justify-between gap-3">
                   <Coins className="size-4 text-yellow-400" aria-hidden="true" />
                   <span className="text-lg font-semibold text-white">
-                    {mode.creditCost}
-                    <span className="ml-1 text-xs font-normal text-zinc-500">credits</span>
+                    {mode.creditCost}{" "}
+                    <span className="text-xs font-normal text-zinc-500">credits</span>
                   </span>
                 </div>
                 <h3 className="mt-4 font-semibold text-zinc-100">{mode.label.replace("GPT Image 2 · ", "")}</h3>

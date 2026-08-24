@@ -31,6 +31,7 @@ type EditorState = {
   showHistory: boolean;
   isLoading: boolean;
   isUploading: boolean;
+  isMaskProcessing: boolean;
   errorMessage: string | null;
   userFiles: EditorReferenceFile[];
   selectedTool: ToolType;
@@ -38,6 +39,7 @@ type EditorState = {
   selectedModelId: string;
   creditBalance: number | null;
   setMask: (mask: Blob | null) => void;
+  setMaskProcessing: (processing: boolean) => void;
   setBrushSize: (size: number) => void;
   setUserFiles: (files: EditorReferenceFile[]) => void;
   setHistoryIndex: (index: number) => void;
@@ -129,6 +131,7 @@ export const useEditorStore = create<EditorState>()(
           imageRef,
           imageRefsByImage: boundedRefs,
           mask: null,
+          isMaskProcessing: false,
           history: boundedHistory,
           historyIndex: boundedHistory.length - 1,
           userFiles: [],
@@ -191,7 +194,9 @@ export const useEditorStore = create<EditorState>()(
           }
 
           const message = errorMessage(error);
-          set({ errorMessage: message });
+          if (activeEditController === controller) {
+            set({ errorMessage: message });
+          }
           throw error instanceof Error ? error : new Error(message);
         } finally {
           if (activeEditController === controller) {
@@ -212,6 +217,7 @@ export const useEditorStore = create<EditorState>()(
         showHistory: false,
         isLoading: false,
         isUploading: false,
+        isMaskProcessing: false,
         errorMessage: null,
         userFiles: [],
         selectedTool: ToolType.MOVE,
@@ -219,6 +225,7 @@ export const useEditorStore = create<EditorState>()(
         selectedModelId: DEFAULT_IMAGE_MODEL_ID,
         creditBalance: null,
         setMask: (mask) => set({ mask }),
+        setMaskProcessing: (isMaskProcessing) => set({ isMaskProcessing }),
         setBrushSize: (brushSize) => set({ brushSize }),
         setSelectedTool: (selectedTool) => set({ selectedTool }),
         setUserFiles: (userFiles) => set({ userFiles }),
@@ -238,6 +245,7 @@ export const useEditorStore = create<EditorState>()(
               imageRef,
               imageRefsByImage: imageRef ? { [imageData]: imageRef } : {},
               mask: null,
+              isMaskProcessing: false,
               history: [imageData],
               historyIndex: 0,
               showHistory: false,
@@ -258,6 +266,7 @@ export const useEditorStore = create<EditorState>()(
             imageRef: null,
             imageRefsByImage: {},
             mask: null,
+            isMaskProcessing: false,
             history: [],
             historyIndex: 0,
             showHistory: false,
@@ -300,6 +309,7 @@ export const useEditorStore = create<EditorState>()(
             image,
             imageRef: state.imageRefsByImage[image] ?? null,
             mask: null,
+            isMaskProcessing: false,
             errorMessage: null,
           });
         },
@@ -320,6 +330,7 @@ export const useEditorStore = create<EditorState>()(
             imageRef: currentRef ?? null,
             imageRefsByImage: currentRef ? { [currentImage]: currentRef } : {},
             mask: null,
+            isMaskProcessing: false,
           });
         },
         undo: () => {
@@ -347,7 +358,13 @@ export const useEditorStore = create<EditorState>()(
           set({ isLoading: false, errorMessage: null });
         },
         generateEdit: async ({ webSearch = false } = {}) => {
-          const { prompt, userFiles, mask } = get();
+          const { prompt, userFiles, mask, isMaskProcessing } = get();
+          if (isMaskProcessing) {
+            const message = "The selection mask is still being prepared. Try again in a moment.";
+            set({ errorMessage: message });
+            throw new Error(message);
+          }
+
           const finalPrompt = mask
             ? `${prompt}\nEdit only the transparent mask region. Preserve the opaque region.`
             : prompt;
@@ -369,6 +386,9 @@ export const useEditorStore = create<EditorState>()(
         },
       };
     },
-    { name: "EditorStore" },
+    {
+      name: "EditorStore",
+      enabled: process.env.NODE_ENV !== "production",
+    },
   ),
 );
